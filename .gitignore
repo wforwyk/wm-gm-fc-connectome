@@ -1,0 +1,65 @@
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Notebook checkpoints and Python build artefacts
+**/.ipynb_checkpoints/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local environments and credentials
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets*.json
+
+# Temporary files and logs
+*.log
+tmp/
+temp/
+cache/
+**/trash/
+
+# Research data and derived outputs
+archives/
+data/
+rawdata/
+derivatives/
+outputs/
+results/
+*.nii
+*.nii.gz
+*.mgz
+*.mgh
+*.mat
+*.csv
+*.tsv
+*.xlsx
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pkl
+*.html
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# Existing generated files not covered above
+part1/tree_1100.txt
+part2/development_snapshot/no3_v9/
+part2/development_snapshot/no10/
+
+# Subject-specific local execution configuration
+part1/wm/wm_no2_subjectid_dmrirc
