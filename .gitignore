@@ -58,8 +58,6 @@ results/
 
 # Existing generated files not covered above
 part1/tree_1100.txt
-part2/development_snapshot/no3_v9/
-part2/development_snapshot/no10/
 
 # Subject-specific local execution configuration
-part1/wm/wm_no2_subjectid_dmrirc
+part1/wm/pt1_wm_no02_subjectid_dmrirc
