@@ -94,13 +94,22 @@ except ImportError:
 
 
 def load_lut(path):
+    """
+    AAL3v1.nii.txt is whitespace-separated: "<id> <name> [<index>]".
+    Most rows carry a trailing index column, a few (e.g. 35/36 Cingulate_Ant,
+    81/82 Thalamus) do not.  Only the second field is the region name --
+    joining columns 2+ would yield "Precentral_L 1" for most regions and a
+    bare name for the rest, i.e. two different name formats in one table.
+    Must stay identical to load_lut in pt1_wm_no07: region names are the
+    join key between aal_summary.csv and the region groups built here.
+    """
     lut = {}
     with open(path) as f:
         for line in f:
             parts = line.strip().split()
             if len(parts) >= 2:
                 try:
-                    lut[int(parts[0])] = " ".join(parts[1:])
+                    lut[int(parts[0])] = parts[1]
                 except ValueError:
                     pass
     return lut

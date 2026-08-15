@@ -26,10 +26,10 @@ TEMPLATE_DIR = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/d
 OUTPUT_DIR = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/derivatives/pt2_group_results/no4_endpoint_voxels'
 TRACT_SUFFIX = '_avg16_syn_bbr'
 QC_EXCLUDE = {'rh.atr', 'acomm'}
-# Replace this with the actual filename layout.  It must resolve to ONE image.
-# Available fields: {batch_dir}, {subject}, {tract}, {end} (end is 1 or 2).
-# TRACULA output in fMRI space.  ``tract`` is the cleaned tract name from
-# aal_summary (e.g., cc.bodypf); TRACULA's directory retains TRACT_SUFFIX.
+# Produced by part1/template/pt1_template_no05_coregister_endpoints_to_fmri.m.
+# It must resolve to exactly one image. Available fields: {batch_dir},
+# {subject}, {tract}, {end} (end is 1 or 2). ``tract`` is the cleaned name
+# from aal_summary (e.g., cc.bodypf); its directory retains TRACT_SUFFIX.
 ENDPOINT_GLOB_TEMPLATE = '{batch_dir}/{subject}/wm/freesurfer/{subject}/dpath/{tract}_avg16_syn_bbr/fmri_endpt{end}.pd.nii'
 ENDPOINT_THRESHOLD = 0.0
 # Leave empty to process every numeric subject directory.

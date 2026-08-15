@@ -7,7 +7,13 @@
 #   and an include/exclude flag for downstream FC analyses.
 #
 # INPUT:
-#   - AAL3v1_nii.txt           : AAL3v1 region list (id, name, index)
+#   - AAL3v1.nii.txt           : AAL3v1 region list, whitespace-separated
+#                                "<id> <name> [<index>]". Most rows carry a
+#                                trailing index column; a few (35/36
+#                                Cingulate_Ant, 81/82 Thalamus) do not, so only
+#                                field 2 is the name. pt1_wm_no07 / no11 read
+#                                the same file with the same rule, which is what
+#                                makes region names join across Part 1 and 2.
 #   - ROI_MNI_V7_1mm_Border.mat: border voxel coordinates per region,
 #                                used to derive physically adjacent region pairs
 #
@@ -55,7 +61,7 @@ import scipy.io
 # =============================================================================
 # USER SETTINGS
 # =============================================================================
-AAL_TXT      = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/derivatives/template/AAL3/AAL3v1_nii.txt'
+AAL_TXT      = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/derivatives/template/AAL3/AAL3v1.nii.txt'
 BORDER_MAT   = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/derivatives/template/AAL3/ROI_MNI_V7_1mm_Border.mat'
 OUTPUT_DIR   = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/derivatives/template/AAL3'
 # =============================================================================

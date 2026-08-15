@@ -4,15 +4,17 @@
 #
 # PURPOSE:
 #   Aggregate pt2_no2 per-subject CSVs and test whether WM-present pairs
-#   show higher FC than WM-absent pairs using within-subject analysis,
-#   and whether RD further modulates FC within WM-present pairs.
+#   show higher FC than WM-absent pairs after subject-specific adjustment for
+#   log geodesic distance.  The raw contrast is retained as descriptive;
+#   tract-level rows are retained only for tract/RD analyses.
 #
 # KEY DESIGN:
 #   WM group (present/absent) is a WITHIN-subject factor. Every subject has
 #   both WM-present and WM-absent pairs. Statistical tests are therefore
 #   conducted at the subject level:
-#     Main test  : per-subject mean FC diff (present - absent)
-#                  tested against zero via one-sample t-test (df = n_subj - 1)
+#     Main test  : per-subject mean residual-FC diff (present - absent) after
+#                  subject-specific FC~log(distance) residualization, tested
+#                  against zero via one-sample t-test (df = n_subj - 1)
 #     System test: same approach per pathway type (commissural/association/projection)
 #     RD test    : per-subject Spearman r (FC ~ RD within WM-present pairs)
 #                  tested against zero via one-sample t-test
@@ -22,8 +24,9 @@
 #   - aal3_region_category.csv (for cortical filter)
 #
 # OUTPUT:
-#   - pt2_no3_pooled.csv
-#   - pt2_no3_within_subj_stats.txt  : main within-subject t-test
+#   - pt2_no3_pair_level.csv / pt2_no3_pooled_tract_level.csv
+#   - pt2_no3_distance_adjusted_stats.csv / pt2_no3_subject_effects.csv
+#   - pt2_no3_within_subj_stats.txt  : primary distance-adjusted t-test
 #   - pt2_no3_system_stats.txt       : per-system within-subject t-test
 #   - pt2_no3_rd_stats.txt           : RD-FC Spearman + t-test
 #   - pt2_no3_fig_violin.png         : FC distribution by WM group
@@ -124,6 +127,23 @@ def sig_stars(p):
 def pstr(p):
     return 'p<0.001' if p < 0.001 else f'p={p:.3f}'
 
+def benjamini_hochberg(pvals):
+    """Return BH-FDR adjusted p values in original order."""
+    pvals = np.asarray(pvals, dtype=float)
+    out = np.full(len(pvals), np.nan)
+    valid = np.isfinite(pvals)
+    if not valid.any():
+        return out
+    p = pvals[valid]
+    order = np.argsort(p)
+    ranked = p[order]
+    adjusted = ranked * len(ranked) / np.arange(1, len(ranked) + 1)
+    adjusted = np.minimum.accumulate(adjusted[::-1])[::-1]
+    restored = np.empty_like(adjusted)
+    restored[order] = np.minimum(adjusted, 1.0)
+    out[valid] = restored
+    return out
+
 # --------------------------------------------------------------------------
 # 1. Load and pool all subject CSVs
 # --------------------------------------------------------------------------
@@ -131,6 +151,8 @@ region_df    = pd.read_csv(os.path.join(TEMPLATE_DIR, 'aal3_region_category.csv'
 included_ids = set(region_df[region_df['include'] == 1]['roi_id'])
 
 files = sorted(glob.glob(os.path.join(INPUT_DIR, '*_wm_present_absent_pairs.csv')))
+if not files:
+    raise RuntimeError(f'No pt2_no02 subject files found in {INPUT_DIR}')
 print(f"Found {len(files)} subject files")
 
 dfs = []
@@ -139,48 +161,90 @@ for f in files:
     df = df[df['roi_id_a'].isin(included_ids) & df['roi_id_b'].isin(included_ids)]
     dfs.append(df)
 
-pool = pd.concat(dfs, ignore_index=True)
-pool['pair_id']      = pool['roi_id_a'].astype(str) + '_' + pool['roi_id_b'].astype(str)
-pool['pathway_type'] = pool['tract_name'].apply(assign_pathway_type)
-pool                 = pool[np.isfinite(pool['mean_FC']) & np.isfinite(pool['mean_dist_mm'])]
-pool                 = pool.dropna(subset=['mean_FC', 'mean_dist_mm'])
-pool['mean_FC_z']    = np.arctanh(np.clip(pool['mean_FC'], -0.9999, 0.9999))
-pool['wm_group_bin'] = (pool['wm_group'] == 'wm_present').astype(int)
+tract_pool = pd.concat(dfs, ignore_index=True)
+tract_pool['pair_id']      = tract_pool['roi_id_a'].astype(str) + '_' + tract_pool['roi_id_b'].astype(str)
+tract_pool['pathway_type'] = tract_pool['tract_name'].apply(assign_pathway_type)
+tract_pool                 = tract_pool[np.isfinite(tract_pool['mean_FC']) & np.isfinite(tract_pool['mean_dist_mm'])]
+tract_pool                 = tract_pool.dropna(subset=['mean_FC', 'mean_dist_mm'])
+tract_pool['mean_FC_z']    = np.arctanh(np.clip(tract_pool['mean_FC'], -0.9999, 0.9999))
 
-pool.to_csv(os.path.join(OUTPUT_DIR, 'pt2_no3_pooled.csv'), index=False)
-print(f"Subjects  : {pool['subject'].nunique()}")
-print(f"WM-present: {(pool['wm_group']=='wm_present').sum()}")
-print(f"WM-absent : {(pool['wm_group']=='wm_absent').sum()}")
+# pt2_no02 deliberately writes one WM-present row per tract.  That is needed
+# for tract/RD analyses, but the Aim 1 primary test is a REGION-PAIR analysis.
+# Collapse the duplicate tract rows before estimating the WM-present effect.
+pair_agg = {
+    'roi_id_a': 'first', 'roi_id_b': 'first', 'roi_name_a': 'first',
+    'roi_name_b': 'first', 'category_a': 'first', 'category_b': 'first',
+    'mean_FC': 'first', 'mean_dist_mm': 'first', 'n_voxel_pairs': 'first',
+    'mean_FC_z': 'first', 'tract_name': 'count',
+}
+pair_df = (tract_pool.groupby(['subject', 'pair_id', 'wm_group'], as_index=False)
+           .agg(pair_agg)
+           .rename(columns={'tract_name': 'n_supporting_tracts'}))
+pair_df['wm_group_bin'] = (pair_df['wm_group'] == 'wm_present').astype(int)
+pair_df.to_csv(os.path.join(OUTPUT_DIR, 'pt2_no3_pair_level.csv'), index=False)
+tract_pool.to_csv(os.path.join(OUTPUT_DIR, 'pt2_no3_pooled_tract_level.csv'), index=False)
+print(f"Subjects  : {pair_df['subject'].nunique()}")
+print(f"WM-present pairs: {(pair_df['wm_group']=='wm_present').sum()}")
+print(f"WM-absent pairs : {(pair_df['wm_group']=='wm_absent').sum()}")
 
 # --------------------------------------------------------------------------
-# 2. Within-subject main test: FC_present - FC_absent per subject
+# 2. Aim 1 primary test: distance-adjusted, within-subject WM effect
 # --------------------------------------------------------------------------
+def one_sample_summary(values, label):
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if len(values) < 2:
+        return {'test': label, 'n_subjects': len(values)}
+    t, p = stats.ttest_1samp(values, 0)
+    se = values.std(ddof=1) / np.sqrt(len(values))
+    ci_half = stats.t.ppf(.975, len(values) - 1) * se
+    return {'test': label, 'n_subjects': len(values), 'mean': values.mean(),
+            'se': se, 'ci95_lo': values.mean() - ci_half,
+            'ci95_hi': values.mean() + ci_half, 't': t,
+            'df': len(values) - 1, 'p': p}
+
 subj_stats = []
-for subj, grp in pool.groupby('subject'):
-    mu_p = grp[grp['wm_group'] == 'wm_present']['mean_FC_z'].mean()
-    mu_a = grp[grp['wm_group'] == 'wm_absent']['mean_FC_z'].mean()
-    if np.isfinite(mu_p) and np.isfinite(mu_a):
-        subj_stats.append({'subject': subj, 'mu_present': mu_p,
-                           'mu_absent': mu_a, 'diff': mu_p - mu_a})
+for subj, grp in pair_df.groupby('subject'):
+    grp = grp[np.isfinite(grp['mean_FC_z']) & np.isfinite(grp['mean_dist_mm']) &
+              (grp['mean_dist_mm'] > 0)].copy()
+    present = grp['wm_group'].eq('wm_present')
+    if present.sum() == 0 or (~present).sum() == 0 or len(grp) < 3:
+        continue
+    # Subject-specific log-distance residualization keeps participant as the
+    # inferential unit and allows the FC-distance slope to vary by subject.
+    X = np.column_stack([np.ones(len(grp)), np.log(grp['mean_dist_mm'].to_numpy())])
+    beta, *_ = np.linalg.lstsq(X, grp['mean_FC_z'].to_numpy(), rcond=None)
+    residual = grp['mean_FC_z'].to_numpy() - X @ beta
+    raw_diff = grp.loc[present, 'mean_FC_z'].mean() - grp.loc[~present, 'mean_FC_z'].mean()
+    adjusted_diff = residual[present.to_numpy()].mean() - residual[(~present).to_numpy()].mean()
+    subj_stats.append({'subject': subj, 'n_pairs': len(grp),
+                       'n_wm_present_pairs': int(present.sum()),
+                       'n_wm_absent_pairs': int((~present).sum()),
+                       'raw_diff': raw_diff, 'distance_adjusted_diff': adjusted_diff,
+                       'log_distance_slope': beta[1]})
 
-subj_df  = pd.DataFrame(subj_stats)
-diffs    = subj_df['diff'].values
-t_main, p_main = stats.ttest_1samp(diffs, 0)
-n_subj   = len(diffs)
-se_main  = diffs.std(ddof=1) / np.sqrt(n_subj)
+subj_df = pd.DataFrame(subj_stats)
+if subj_df.empty:
+    raise RuntimeError('No subjects had both valid WM-present and WM-absent pairs.')
+subj_df.to_csv(os.path.join(OUTPUT_DIR, 'pt2_no3_subject_effects.csv'), index=False)
+raw_result = one_sample_summary(subj_df['raw_diff'], 'Raw within-subject WM-present minus WM-absent FC')
+primary_result = one_sample_summary(subj_df['distance_adjusted_diff'],
+                                    'Primary: log-distance-adjusted within-subject WM-present minus WM-absent FC')
+n_subj = primary_result['n_subjects']
+diffs = subj_df['distance_adjusted_diff'].to_numpy()
+t_main, p_main, se_main = primary_result['t'], primary_result['p'], primary_result['se']
+pd.DataFrame([primary_result, raw_result]).to_csv(
+    os.path.join(OUTPUT_DIR, 'pt2_no3_distance_adjusted_stats.csv'), index=False)
 
-print(f"\n=== Main within-subject test ===")
+print(f"\n=== Primary distance-adjusted within-subject test ===")
 print(f"N subjects     : {n_subj}")
-print(f"Mean diff      : {diffs.mean():.4f} +/- {se_main:.4f} SE")
+print(f"Mean difference: {primary_result['mean']:.4f} +/- {se_main:.4f} SE")
 print(f"t({n_subj-1}) = {t_main:.3f}, p = {p_main:.4e}")
 
 with open(os.path.join(OUTPUT_DIR, 'pt2_no3_within_subj_stats.txt'), 'w') as f:
-    f.write("Within-subject t-test: WM-present vs WM-absent FC (Fisher Z)\n")
-    f.write(f"N subjects          : {n_subj}\n")
-    f.write(f"Mean diff (pres-abs): {diffs.mean():.4f}\n")
-    f.write(f"SE                  : {se_main:.4f}\n")
-    f.write(f"t({n_subj-1})       : {t_main:.3f}\n")
-    f.write(f"p                   : {p_main:.4e}\n")
+    f.write('Primary analysis: subject-specific log(geodesic distance)-adjusted WM effect\n')
+    f.write('One row per subject-AAL pair; multi-tract WM-present pairs are deduplicated.\n\n')
+    f.write(pd.DataFrame([primary_result, raw_result]).to_string(index=False))
 
 # --------------------------------------------------------------------------
 # 3. Within-subject test per tract system
@@ -188,7 +252,7 @@ with open(os.path.join(OUTPUT_DIR, 'pt2_no3_within_subj_stats.txt'), 'w') as f:
 sys_results = []
 for sys_name in ['commissural pathways', 'projection pathways', 'association pathways']:
     sys_diffs = []
-    for subj, grp in pool.groupby('subject'):
+    for subj, grp in tract_pool.groupby('subject'):
         mu_sys = grp[(grp['wm_group'] == 'wm_present') &
                      (grp['pathway_type'] == sys_name)]['mean_FC_z'].mean()
         mu_abs = grp[grp['wm_group'] == 'wm_absent']['mean_FC_z'].mean()
@@ -217,6 +281,8 @@ for sys_name in ['commissural pathways', 'projection pathways', 'association pat
           f"t({len(sys_diffs)-1})={t:.3f}, p={p:.4e}")
 
 sys_df = pd.DataFrame(sys_results)
+if not sys_df.empty:
+    sys_df['p_fdr_bh'] = benjamini_hochberg(sys_df['pval'])
 with open(os.path.join(OUTPUT_DIR, 'pt2_no3_system_stats.txt'), 'w') as f:
     f.write("Within-subject t-test: WM-present (by pathway type) vs WM-absent FC\n")
     f.write("Pathway classification: Maffei et al., 2021, NeuroImage 245:118706\n")
@@ -228,7 +294,7 @@ with open(os.path.join(OUTPUT_DIR, 'pt2_no3_system_stats.txt'), 'w') as f:
 # 4. Within-subject RD-FC Spearman correlation
 # --------------------------------------------------------------------------
 subj_rd_corr = []
-for subj, grp in pool.groupby('subject'):
+for subj, grp in tract_pool.groupby('subject'):
     wmp = grp[(grp['wm_group'] == 'wm_present')].dropna(subset=['mean_RD', 'mean_FC_z'])
     if len(wmp) < 3:
         continue
@@ -263,7 +329,7 @@ fig, ax = plt.subplots(figsize=(6, 5.5))
 groups  = ['wm_absent', 'wm_present']
 labels  = ['WM-absent', 'WM-present']
 colors  = ['#C0392B', '#1A5276']
-data    = [pool[pool['wm_group'] == g]['mean_FC_z'].values for g in groups]
+data    = [pair_df[pair_df['wm_group'] == g]['mean_FC_z'].values for g in groups]
 
 parts = ax.violinplot(data, positions=[0, 1], showmedians=False, showextrema=False)
 for pc, col in zip(parts['bodies'], colors):
@@ -290,10 +356,10 @@ ax.set_xticks([0, 1])
 ax.set_xticklabels([f'WM-absent (n={len(data[0]):,})',
                     f'WM-present (n={len(data[1]):,})'], fontsize=10)
 ax.set_ylabel('Mean FC (Fisher Z)', fontsize=11)
-ax.set_title('FC distribution by WM group (cortical pairs, all subjects)', fontsize=11)
+ax.set_title('FC distribution by WM group (pair-level, descriptive)', fontsize=11)
 ax.legend(fontsize=8, loc='upper left', framealpha=0.8)
 ax.text(0.98, 0.97,
-        f'Within-subj t({n_subj-1})={t_main:.2f}, {pstr(p_main)}',
+        f'Distance-adjusted within-subj t({n_subj-1})={t_main:.2f}, {pstr(p_main)}',
         ha='right', va='top', transform=ax.transAxes, fontsize=8.5, color='#222',
         bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='#ccc', alpha=0.9))
 ax.spines['top'].set_visible(False)
@@ -310,7 +376,7 @@ plot_cfg = {
     'wm_present': ('#1F77B4', 'WM-present'),
 }
 for grp_name, (col, lbl) in plot_cfg.items():
-    sub = pool[pool['wm_group'] == grp_name].copy()
+    sub = pair_df[pair_df['wm_group'] == grp_name].copy()
     sub = sub[sub['mean_dist_mm'] > 0]
     sub_plot = sub.sample(min(3000, len(sub)), random_state=42)
     ax.scatter(sub_plot['mean_dist_mm'], sub_plot['mean_FC_z'],
@@ -331,7 +397,7 @@ plt.close()
 print("Saved: pt2_no3_fig_scatter.png")
 
 # --- Fig 2b: FC ~ RD (exponential decay + per-system fits) ---
-pool_wmp = pool[pool['wm_group'] == 'wm_present'].dropna(subset=['mean_RD', 'mean_FC_z'])
+pool_wmp = tract_pool[tract_pool['wm_group'] == 'wm_present'].dropna(subset=['mean_RD', 'mean_FC_z'])
 pool_wmp = pool_wmp[pool_wmp['mean_RD'] > 0].copy()
 
 # 데이터 필터링: 'other'에 해당하는 경로(lh.cst, rh.cst 등) 명시적 제외
@@ -427,7 +493,7 @@ if len(sys_df_plot) > 0:
         else:
             star_y = row['mean_diff'] - row['se'] - 0.0003
             va_pos = 'top'
-        ax.text(idx, star_y, sig_stars(row['pval']),
+        ax.text(idx, star_y, sig_stars(row['p_fdr_bh']),
                 ha='center', va=va_pos, fontsize=12, color='#222', fontweight='bold')
         ax.text(idx, -0.001,
                 f"n={int(row['n_subjects'])} subj  df={int(row['df'])}",

@@ -18,8 +18,16 @@ SUBJECTS  = {'3003'};
 N_VOLS    = 240;
 SPM_ROOT  = '/opt/spm/';
 TPM_PATH  = '/opt/spm/tpm/TPM.nii';
-BIAS_FUN  = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/code/brainworld_scripts_v3_new_revised/gm/apply_bias_field_image.m';
 MATLAB_ROOT = matlabroot;   % auto-detect
+
+% Helper called by Job 3.  It ships next to this script as
+% apply_bias_field_image.m, so leave BIAS_FUN empty and it is located
+% automatically.  Set an absolute path only to override that.
+%
+% The file MUST be named apply_bias_field_image.m: MATLAB resolves a
+% function handle by FILE name, not by the name in the function line, so a
+% renamed file makes Job 3's handle unresolvable.
+BIAS_FUN  = '';
 
 % Slice Timing parameters
 ST_NSLICES  = 32;
@@ -28,6 +36,32 @@ ST_TA       = 1.9375;
 ST_SO       = [2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32 ...
                1 3 5 7  9 11 13 15 17 19 21 23 25 27 29 31];
 ST_REFSLICE = 2;
+
+%% ================= RESOLVE THE BIAS-FIELD HELPER =================
+% Job 3 calls apply_bias_field_image through SPM's "Call MATLAB function"
+% module, which needs both the file (BIAS_FUN) and the function on the
+% MATLAB path.  Resolve and verify it here so a missing helper fails now,
+% with a clear message, rather than midway through the first subject.
+if isempty(BIAS_FUN)
+    this_dir = fileparts(mfilename('fullpath'));
+    if isempty(this_dir)
+        error(['Cannot locate this script''s directory (running from the ' ...
+               'command window?). Set BIAS_FUN to the full path of ' ...
+               'apply_bias_field_image.m in USER SETTINGS.']);
+    end
+    BIAS_FUN = fullfile(this_dir, 'apply_bias_field_image.m');
+end
+if ~exist(BIAS_FUN, 'file')
+    error('Bias-field helper not found: %s', BIAS_FUN);
+end
+[bias_dir, bias_name] = fileparts(BIAS_FUN);
+if ~strcmp(bias_name, 'apply_bias_field_image')
+    error(['The helper must be named apply_bias_field_image.m (found %s.m). ' ...
+           'MATLAB resolves function handles by file name, so Job 3 cannot ' ...
+           'call a renamed file.'], bias_name);
+end
+addpath(bias_dir);
+fprintf('Bias-field helper: %s\n', BIAS_FUN);
 
 %% ================= SPM INITIALIZATION =================
 addpath(SPM_ROOT);

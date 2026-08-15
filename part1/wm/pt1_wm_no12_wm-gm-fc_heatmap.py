@@ -6,24 +6,29 @@ PURPOSE : Generate GM voxel x voxel heatmaps for FC, geodesic distance,
           and WM radial diffusivity (RD). Loops over multiple subjects.
 
 PIPELINE CONTEXT:
-  no6 → {subj}_pathstats.csv           (tract WM metrics)
-  no12 → {subj}_voxelpair_RD.csv       (idx_u, idx_v, RD per voxel pair)
+  no11 → {subj}_voxelpair_RD.csv       (idx_u, idx_v, RD per voxel pair)
   R.npz, W_a.npz                       (FC and geodesic dist matrices)
       ↓ shared sampling (seed=42)
   → heatmap_A_fc_{subj}.png            (FC matrix,   RdBu_r)
   → heatmap_B_dist_{subj}.png          (Geodesic dist, Greys)
   → heatmap_C_rd_{subj}.png            (RD voxel×voxel, Blues)
 
-INPUT   : fc         — R.npz
-          dist       — W_a.npz
-          voxelpair_rd — {subj}_voxelpair_RD.csv  (from no12)
+INPUT   : fc           — {subj}_R.npz
+          dist         — {subj}_W_a.npz
+          voxelpair_rd — wm-gm-fc/3d/{subj}_voxelpair_RD.csv  (from no11)
 
-OUTPUT  : {OUTDIR}/heatmap_{A,B,C}_{subj}.png
+OUTPUT  : {BASE_DIR}/{subj}/wm-gm-fc/heatmap/heatmap_{A,B,C}_{subj}.png
 
 NOTE    : Numeric subject IDs only (no sub- prefix) for batch2.
           voxelpair_rd CSV requires columns: idx_u, idx_v, RD.
           SAMPLE_N controls how many voxels are sampled per axis.
           Same random seed (42) used across all three panels.
+
+          Panel C is sparse by construction: the SAMPLE_N voxels drawn here
+          and the per-region voxels no11 sampled (MAX_VOXELS) are independent
+          draws from the same voxel set, so only their intersection can be
+          filled.  The fill percentage is printed; if it is near zero, raise
+          SAMPLE_N and/or no11's MAX_VOXELS.
 """
 
 # ── USER SETTINGS ───────────────────────────────────────────
@@ -101,8 +106,12 @@ def build_rd_matrix(csv_path, idx):
 
 def save_heatmap(mat, title, xlabel, ylabel, clabel, cmap, fname,
                  center=False):
-    fig, ax = plt.subplots(figsize=(7, 6.5))
     finite = mat[np.isfinite(mat)]
+    if finite.size == 0:
+        print(f"  SKIP {Path(fname).name}: no finite values to plot")
+        return
+
+    fig, ax = plt.subplots(figsize=(7, 6.5))
     vmin = np.percentile(finite, 1)
     vmax = np.percentile(finite, 99)
     if center:
@@ -126,7 +135,7 @@ def save_heatmap(mat, title, xlabel, ylabel, clabel, cmap, fname,
 def run_subject(subj):
     fc           = f"{BASE_DIR}/{subj}/gm/func/derived/fc_results/{subj}_R.npz"
     dist         = f"{BASE_DIR}/{subj}/gm/anat/derived/dist_results/{subj}_W_a.npz"
-    voxelpair_rd = f"{BASE_DIR}/{subj}/gm-wm-fc/3d/{subj}_voxelpair_RD.csv"
+    voxelpair_rd = f"{BASE_DIR}/{subj}/wm-gm-fc/3d/{subj}_voxelpair_RD.csv"
     out          = Path(BASE_DIR) / subj / "wm-gm-fc"/ "heatmap"
     out.mkdir(parents=True, exist_ok=True)
 

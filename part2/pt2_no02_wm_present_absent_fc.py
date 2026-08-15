@@ -16,22 +16,21 @@
 #
 #   For each pair (A, B):
 #     - Collect all GM voxels in region A and region B from the bnb mask
-#     - Extract their pairwise FC values from vector_r (upper triangle)
-#     - Extract their pairwise geodesic distances from vector_w
+#     - Extract their pairwise FC values from the upper triangle of R
+#     - Extract their pairwise geodesic distances from the upper triangle of W_a
 #     - Compute mean_FC, mean_dist_mm, n_pairs
 #     - If WM-present: attach tract name and mean RD from pathstats
 #
 # INPUT FILES (per subject):
-#   bnb mask  : gm/func/derived/bnbmdenoised_detrended_rest_{subj}.nii
-#   FC vector : gm/func/derived/fc_results/{subj}_R.npz          (arr_0)
-#   dist matrix: gm/anat/derived/dist_results/{subj}_W_a.npz     (arr_0)
-#   AAL summary: wm/{subj}/aal_summary/{subj}_aal_summary.csv
-#   pathstats  : wm/{subj}/pathstats/{subj}_pathstats.csv
-#   endpt CSVs : wm/{subj}/endpoints/endpt1/ and endpt2/
+#   bnb mask   : gm/func/derived/bnbmdenoised_detrended_rest_{subj}.nii
+#   FC matrix  : gm/func/derived/fc_results/{subj}_R.npz          (arr_0, n_gm x n_gm)
+#   dist matrix: gm/anat/derived/dist_results/{subj}_W_a.npz      (arr_0, n_gm x n_gm)
+#   AAL atlas  : gm/derived/fmri_wsst_all_ROIs_AAL_u_rc1sub-{subj}_ses-1_T1w_NCKU_336Ss.nii
+#   AAL summary: wm/derived/aal_summary/{subj}_aal_summary.csv
+#   pathstats  : wm/derived/pathstats/{subj}_pathstats.csv
 #
-# REFERENCE FILES (atlas-level, from pt2_no16):
+# REFERENCE FILE (atlas-level, from pt2_no01):
 #   aal3_region_category.csv
-#   AAL3v1 NIfTI in fMRI space  (warped; expected in subject anat/derived/)
 #
 # OUTPUT (per subject):
 #   {subj}_wm_present_absent_pairs.csv
@@ -42,11 +41,17 @@
 # NOTES:
 #   - Only pairs where both regions are include=1 (from region_category CSV)
 #     are processed.
-#   - FC values from vector_r are already Pearson r (float16); absolute
-#     value is NOT taken here — raw r is preserved for slope analysis.
-#   - Geodesic distance from W_a is in mm (float16).
-#   - vector_r and vector_w are upper-triangle-ordered 1D arrays of the
-#     (n_gm x n_gm) symmetric matrices; index mapping uses np.triu_indices.
+#   - R.npz holds raw Pearson r; absolute value is NOT taken here and no
+#     Fisher-Z is applied, so raw r is preserved for slope analysis.
+#     (pt2_no03 applies arctanh to the per-pair means written here.)
+#   - Geodesic distance from W_a is in mm.
+#   - R and W_a are dense (n_gm x n_gm). This script flattens their upper
+#     triangles once per subject via np.triu_indices, then addresses pairs
+#     by the closed-form position i*n - i*(i+1)//2 + j - i - 1.
+#   - Voxel row order is the C-order of the non-zero voxels of the bnb mask,
+#     which is the order gm_no6 used to build R and W_a.
+#   - WM-present classification uses the top1 AAL id of each endpoint from
+#     aal_summary.csv (pt1_wm_no07 also reports top2/top3, unused here).
 #   - For WM-present pairs with multiple tracts connecting the same pair,
 #     all tract rows are written separately (one row per tract).
 #   - Subjects with missing bnb mask or FC file are skipped with a warning.
@@ -71,7 +76,7 @@ TEMPLATE_DIR = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/d
 OUTPUT_DIR   = '/bml/projects/06_resilience/projects/06-12_wm-gm-fc-connectome/derivatives/pt2_group_results/no2_wm_fc'
 TRACT_SUFFIX = '_avg16_syn_bbr'
 
-# QC-excluded tracts (from pt2_no14)
+# QC-excluded tracts (kept identical in pt2_no04 / no08)
 QC_EXCLUDE   = {'rh.atr', 'acomm'}
 
 # Subjects to process (fill in or use glob)
@@ -134,37 +139,40 @@ def get_pair_stats(idx_a, idx_b, n_gm, vec_r, vec_w):
     Given voxel index arrays idx_a and idx_b (into the n_gm x n_gm matrix),
     extract all cross-pair FC and distance values from upper-triangle vectors.
     Returns mean_FC, mean_dist, n_pairs.
+
+    Fully vectorised: the cross product of the two index sets is built with
+    repeat/tile rather than a Python double loop, matching the `positions`
+    helper in pt2_no5 and the `upper` helper in pt2_no9.  With regions of a
+    few hundred voxels each and thousands of region pairs per subject, the
+    loop form was the dominant cost of this script.
     """
-    # build list of (i, j) pairs where i < j (upper triangle convention)
-    pairs_i = []
-    pairs_j = []
-    for a in idx_a:
-        for b in idx_b:
-            i, j = (a, b) if a < b else (b, a)
-            pairs_i.append(i)
-            pairs_j.append(j)
-
-    if len(pairs_i) == 0:
+    idx_a = np.asarray(idx_a, dtype=np.int64)
+    idx_b = np.asarray(idx_b, dtype=np.int64)
+    if idx_a.size == 0 or idx_b.size == 0:
         return np.nan, np.nan, 0
 
-    # convert (i, j) upper-triangle matrix indices to 1D vector positions
+    # every (a, b) combination, ordered so that i < j (upper triangle)
+    a = np.repeat(idx_a, idx_b.size)
+    b = np.tile(idx_b, idx_a.size)
+    i = np.minimum(a, b)
+    j = np.maximum(a, b)
+
+    # i == j drops voxels shared by both index sets; i < j also guarantees the
+    # closed-form position below lands inside the upper-triangle vector.
+    keep = i < j
+    if not keep.any():
+        return np.nan, np.nan, 0
+    i, j = i[keep], j[keep]
+
+    # (i, j) upper-triangle matrix indices -> 1D vector positions
     # np.triu_indices ordering: row-major upper triangle
-    pairs_i = np.array(pairs_i)
-    pairs_j = np.array(pairs_j)
-    vec_pos  = pairs_i * n_gm - pairs_i * (pairs_i + 1) // 2 + pairs_j - pairs_i - 1
-
-    # guard: skip any out-of-range indices (same-region diagonal pairs)
-    valid = (pairs_i < pairs_j) & (vec_pos >= 0) & (vec_pos < len(vec_r))
-    vec_pos = vec_pos[valid]
-
-    if len(vec_pos) == 0:
-        return np.nan, np.nan, 0
+    vec_pos = i * n_gm - i * (i + 1) // 2 + j - i - 1
 
     fc_vals   = vec_r[vec_pos].astype(float)
     dist_vals = vec_w[vec_pos].astype(float)
     dist_vals[~np.isfinite(dist_vals)] = np.nan  # exclude inf (disconnected GM pairs)
 
-    return float(np.nanmean(fc_vals)), float(np.nanmean(dist_vals)), int(len(vec_pos))
+    return float(np.nanmean(fc_vals)), float(np.nanmean(dist_vals)), int(vec_pos.size)
 
 # --------------------------------------------------------------------------
 # Helper: load WM-present pairs for a subject from aal_summary

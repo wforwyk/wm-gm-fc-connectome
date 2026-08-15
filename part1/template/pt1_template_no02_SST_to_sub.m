@@ -28,7 +28,7 @@
 % ============================================================
 
 %% ── USER SETTINGS ───────────────────────────────────────────
-SUBJECTS  = {'1001','1002'};  # subject_id must be in ' ' and divided by ,
+SUBJECTS  = {'1001','1002'};  % Numeric subject IDs, comma-separated.
 
 BASE_DIR  = '/your/base/directory/is/your/root/directory';
 
