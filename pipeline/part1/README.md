@@ -41,6 +41,7 @@ and `SOURCE_SESSION` / `RAW_SESSION` settings as needed.
 | 3 | `template/pt1_template_no03_coregister_to_dwi_fmri.m` | DWI- and fMRI-space AAL images |
 | 4 | `template/pt1_template_no04_veritifaction.sh` | grid and label checks |
 | 5 | `template/pt1_template_no05_coregister_endpoints_to_fmri.m` | fMRI-grid endpoint PD maps |
+| 6 | `template/pt1_template_no06_verify_dwi_fmri_alignment.sh` | header-versus-6-DOF DWI–fMRI alignment QC |
 
 Set `DARTEL_TEMPLATE_ID` consistently wherever it appears. It is the
 identifier in your own flow-field filename, not a directory path. The default
@@ -55,7 +56,6 @@ identifier in your own flow-field filename, not a directory path. The default
 | 3 | `wm/pt1_wm_no03_trac-all.sh` | TRACULA tractography |
 | 4–6 | `wm/pt1_wm_no04`–`no06` | endpoint coordinates/size and tract statistics |
 | 7–10 | `wm/pt1_wm_no07`–`no10` | AAL assignments, weights, and rankings |
-| 11–12 | `wm/pt1_wm_no11`–`no12` | WM–GM–FC scatterplots and heatmaps |
 
 Copy and configure `pt1_wm_no02_subjectid_dmrirc.example` for each subject as
 `<subject>_dmrirc`. Its diffusion inputs and phase-encoding settings are
@@ -64,8 +64,15 @@ study-specific and must be verified against the acquisition protocol.
 ## Required checks
 
 - Confirm that the DWI, fMRI, and T1 images are anatomically aligned before
-  running endpoint reslicing.
+  running endpoint reslicing. Run
+  `template/pt1_template_no06_verify_dwi_fmri_alignment.sh` and inspect both
+  overlays plus its residual affine report; this QC does not alter analysis
+  images or registration transforms.
 - Keep the BnB mask, FC matrix, distance matrix, and voxel set together.
 - Confirm every AAL output is on the intended reference grid; use nearest
   neighbour for label images.
 - Review failed-subject reports and QC CSVs before sending products to Part 2.
+
+This package deliberately excludes the optional WM–GM 3D/heatmap visualization
+scripts. It contains the Part 1 processing steps required by the Part 2
+analysis pipeline.

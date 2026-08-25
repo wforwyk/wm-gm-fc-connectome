@@ -37,12 +37,36 @@ def benjamini_hochberg(pvals):
     if not valid.any(): return out
     p=pvals[valid];order=np.argsort(p);ranked=p[order];adj=np.minimum.accumulate((ranked*len(ranked)/np.arange(1,len(ranked)+1))[::-1])[::-1]
     restored=np.empty_like(adj);restored[order]=np.minimum(adj,1.0);out[valid]=restored;return out
+def read_nonempty_csvs(files):
+    """Read only subject files containing rows; no-match subjects are expected."""
+    frames=[]
+    for file in files:
+        try:
+            frame=pd.read_csv(file)
+        except pd.errors.EmptyDataError:
+            continue
+        if not frame.empty: frames.append(frame)
+    return frames
 def main():
     os.makedirs(OUTPUT_DIR,exist_ok=True); files=glob.glob(os.path.join(INPUT_DIR,'*_aim2_matched_endpoint_fc.csv'))
     if not files:raise RuntimeError('No pt2_no9 matched FC files found.')
-    d=pd.concat([pd.read_csv(f) for f in files],ignore_index=True).dropna(subset=['mean_fc_z'])
+    data_frames=read_nonempty_csvs(files)
+    if not data_frames:
+        raise RuntimeError('No matched FC rows were produced. Inspect no09 matching-balance CSVs: the endpoint definition and matching criteria left no analysable tract endpoints.')
+    d=pd.concat(data_frames,ignore_index=True).dropna(subset=['mean_fc_z'])
+    if d.empty:
+        raise RuntimeError('Matched FC rows contain no finite mean_fc_z values.')
+    required_data_columns={'mean_distance_mm','endpoint_relative_threshold'}
+    missing_data_columns=required_data_columns-set(d.columns)
+    if missing_data_columns:
+        raise RuntimeError(f'Matched FC input lacks {sorted(missing_data_columns)}; rerun pt2_no08 and pt2_no09.')
+    thresholds=np.unique(d.endpoint_relative_threshold.dropna().to_numpy(float))
+    if len(thresholds)!=1:
+        raise RuntimeError(f'Matched FC input combines endpoint thresholds {thresholds.tolist()}; analyse one threshold lineage at a time.')
+    endpoint_relative_threshold=float(thresholds[0])
     balance_files=glob.glob(os.path.join(INPUT_DIR,'*_aim2_matching_balance.csv'))
-    balance=pd.concat([pd.read_csv(f) for f in balance_files],ignore_index=True) if balance_files else pd.DataFrame()
+    balance_frames=read_nonempty_csvs(balance_files)
+    balance=pd.concat(balance_frames,ignore_index=True) if balance_frames else pd.DataFrame()
     if REQUIRE_BALANCE and balance.empty:
         raise RuntimeError('Matching-balance CSVs are required for the primary matched analysis but were not found.')
     if len(balance):
@@ -65,6 +89,7 @@ def main():
             'median_abs_smd_wm_distance_eligible':balance.loc[balance.eligible_primary,'smd_wm_distance'].abs().median(),
             'median_abs_smd_gm_probability_eligible':balance.loc[balance.eligible_primary,'smd_gm_probability'].abs().median(),
             'max_absolute_smd_threshold':MAX_ABSOLUTE_SMD, 'minimum_matched_voxels':MIN_MATCHED_VOXELS,
+            'endpoint_relative_threshold':endpoint_relative_threshold,
         }])
         summary.to_csv(os.path.join(OUTPUT_DIR,'aim2_matching_balance_summary.csv'),index=False)
     # Average multiple adjacent targets within tract end, then average tract ends within subject.
@@ -81,14 +106,43 @@ def main():
         pvals=[r.get('p',np.nan) for r in endpoint_control]
         for r,padj in zip(endpoint_control,benjamini_hochberg(pvals)): r['p_fdr_bh']=padj
     slope=u.groupby(['subject','voxel_class']).fc_distance_log_slope.mean().unstack().dropna();slope_result=one_sample(slope['endpoint']-slope['matched_non_endpoint'],'Aim 2.3 matched endpoint-control FC~log(distance) slope')
+    # Directly quantify whether endpoint/control contrasts differ in geodesic
+    # distance to each target, then include log target distance in the
+    # covariate-adjusted interaction sensitivity model.
+    distance_unit=(d.groupby(['subject','tract_name','endpoint','source_roi','target_roi','target_type','voxel_class'],as_index=False)
+                     .agg(mean_target_geodesic_distance_mm=('mean_distance_mm','mean')))
+    distance_wide=(distance_unit.pivot_table(index=['subject','tract_name','endpoint','source_roi','target_roi','target_type'],columns='voxel_class',values='mean_target_geodesic_distance_mm')
+                   .rename(columns={'endpoint':'endpoint_target_distance_mm','matched_non_endpoint':'control_target_distance_mm'})
+                   .reset_index())
+    if {'endpoint_target_distance_mm','control_target_distance_mm'}.issubset(distance_wide.columns):
+        distance_wide['endpoint_minus_control_target_distance_mm']=distance_wide['endpoint_target_distance_mm']-distance_wide['control_target_distance_mm']
+        distance_subject=(distance_wide.groupby(['subject','target_type'],as_index=False)
+                          .endpoint_minus_control_target_distance_mm.mean())
+        distance_results=[]
+        for target,g in distance_subject.groupby('target_type'):
+            r=one_sample(g.endpoint_minus_control_target_distance_mm,
+                         f'Aim 2 target-distance check, endpoint-control, {target}')
+            r['target_type']=target
+            distance_results.append(r)
+        pd.DataFrame(distance_results).to_csv(os.path.join(OUTPUT_DIR,'aim2_target_distance_balance_stats.csv'),index=False)
+        distance_wide.to_csv(os.path.join(OUTPUT_DIR,'aim2_target_distance_balance_units.csv'),index=False)
+    else:
+        raise RuntimeError('Could not form paired endpoint/control target-distance QC table.')
+
     model_result='statsmodels unavailable; primary matched subject-level analysis remains valid.'
     try:
         import statsmodels.formula.api as smf
-        m=d.copy();m['endpoint_binary']=(m.voxel_class=='endpoint').astype(int);m['distant_binary']=(m.target_type=='wm_connected_distant').astype(int)
-        fit=smf.ols('mean_fc_z ~ endpoint_binary*distant_binary + wm_boundary_distance + gm_probability + C(subject)',data=m).fit(cov_type='cluster',cov_kwds={'groups':m['subject']})
-        model_result=fit.summary().as_text();pd.DataFrame({'term':fit.params.index,'beta':fit.params.values,'se_cluster_subject':fit.bse.values,'p':fit.pvalues.values}).to_csv(os.path.join(OUTPUT_DIR,'aim2_covariate_adjusted_model.csv'),index=False)
+        m=d[np.isfinite(d.mean_distance_mm) & d.mean_distance_mm.gt(0)].copy()
+        m['endpoint_binary']=(m.voxel_class=='endpoint').astype(int)
+        m['distant_binary']=(m.target_type=='wm_connected_distant').astype(int)
+        m['log_target_geodesic_distance']=np.log(m.mean_distance_mm)
+        fit=smf.ols('mean_fc_z ~ endpoint_binary*distant_binary + log_target_geodesic_distance + wm_boundary_distance + gm_probability + C(subject)',data=m).fit(cov_type='cluster',cov_kwds={'groups':m['subject']})
+        model_result=fit.summary().as_text()
+        model_table=pd.DataFrame({'term':fit.params.index,'beta':fit.params.values,'se_cluster_subject':fit.bse.values,'p':fit.pvalues.values})
+        model_table.to_csv(os.path.join(OUTPUT_DIR,'aim2_covariate_adjusted_model.csv'),index=False)
+        model_table.to_csv(os.path.join(OUTPUT_DIR,'aim2_target_distance_adjusted_model.csv'),index=False)
     except Exception as e:model_result=f'Covariate-adjusted model not fitted: {e}'
     sample=s.reset_index()[['subject']].drop_duplicates();sample.to_csv(os.path.join(OUTPUT_DIR,'aim2_analysis_subjects.csv'),index=False)
     s.to_csv(os.path.join(OUTPUT_DIR,'aim2_subject_interaction.csv'));w.to_csv(os.path.join(OUTPUT_DIR,'aim2_unit_contrasts.csv'),index=False);pd.DataFrame([primary]).to_csv(os.path.join(OUTPUT_DIR,'aim2_primary_stats.csv'),index=False);pd.DataFrame(endpoint_control).to_csv(os.path.join(OUTPUT_DIR,'aim2_endpoint_control_stats.csv'),index=False);pd.DataFrame([slope_result]).to_csv(os.path.join(OUTPUT_DIR,'aim2_distance_slope_stats.csv'),index=False)
-    with open(os.path.join(OUTPUT_DIR,'aim2_stats.txt'),'w') as f:f.write(pd.DataFrame([primary]+endpoint_control+[slope_result]).to_string(index=False)+'\n\nCOVARIATE-ADJUSTED SENSITIVITY MODEL\n'+model_result)
+    with open(os.path.join(OUTPUT_DIR,'aim2_stats.txt'),'w') as f:f.write(pd.DataFrame([primary]+endpoint_control+[slope_result]).to_string(index=False)+f'\n\nEndpoint relative PD threshold: {endpoint_relative_threshold:g}\n\nTARGET GEODESIC-DISTANCE QC\n'+pd.DataFrame(distance_results).to_string(index=False)+'\n\nCOVARIATE- AND TARGET-DISTANCE-ADJUSTED SENSITIVITY MODEL\n'+model_result)
 if __name__=='__main__':main()

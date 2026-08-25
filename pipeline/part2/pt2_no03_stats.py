@@ -40,7 +40,8 @@
 #     acc_subdivision — consistent with pt2_no2 include flags.
 #     Projection pathways (ATR, AR, OR) thus have proper n as their thalamic
 #     endpoints are included (thalamus_generic=81/82, thalamic_nuclei=121-150).
-#   - Fisher Z transform applied to all FC values (arctanh, clipped +-0.9999)
+#   - Fisher-Z FC is supplied by pt2_no02 as mean(arctanh(r)) at the voxel-pair
+#     level.  This script refuses legacy no02 outputs that lack mean_FC_z.
 #   - Inf values in mean_dist_mm excluded row-wise
 #   - Violin/scatter show pooled pair x subject data for visualization only;
 #     statistical annotations reflect within-subject tests
@@ -158,15 +159,21 @@ print(f"Found {len(files)} subject files")
 dfs = []
 for f in files:
     df = pd.read_csv(f)
+    required = {'mean_FC', 'mean_FC_z', 'mean_dist_mm'}
+    missing = required - set(df.columns)
+    if missing:
+        raise RuntimeError(
+            f'{f} is a legacy pt2_no02 output missing {sorted(missing)}. '
+            'Rerun pt2_no02 before pt2_no03; do not apply Fisher-Z after averaging r.'
+        )
     df = df[df['roi_id_a'].isin(included_ids) & df['roi_id_b'].isin(included_ids)]
     dfs.append(df)
 
 tract_pool = pd.concat(dfs, ignore_index=True)
 tract_pool['pair_id']      = tract_pool['roi_id_a'].astype(str) + '_' + tract_pool['roi_id_b'].astype(str)
 tract_pool['pathway_type'] = tract_pool['tract_name'].apply(assign_pathway_type)
-tract_pool                 = tract_pool[np.isfinite(tract_pool['mean_FC']) & np.isfinite(tract_pool['mean_dist_mm'])]
-tract_pool                 = tract_pool.dropna(subset=['mean_FC', 'mean_dist_mm'])
-tract_pool['mean_FC_z']    = np.arctanh(np.clip(tract_pool['mean_FC'], -0.9999, 0.9999))
+tract_pool                 = tract_pool[np.isfinite(tract_pool['mean_FC_z']) & np.isfinite(tract_pool['mean_dist_mm'])]
+tract_pool                 = tract_pool.dropna(subset=['mean_FC_z', 'mean_dist_mm'])
 
 # pt2_no02 deliberately writes one WM-present row per tract.  That is needed
 # for tract/RD analyses, but the Aim 1 primary test is a REGION-PAIR analysis.

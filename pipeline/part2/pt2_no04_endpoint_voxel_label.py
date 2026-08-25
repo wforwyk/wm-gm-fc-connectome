@@ -33,7 +33,12 @@ DARTEL_TEMPLATE_ID = 'YOUR_DARTEL_TEMPLATE'
 # {subject}, {tract}, {end} (end is 1 or 2). ``tract`` is the cleaned name
 # from aal_summary (e.g., cc.bodypf); its directory retains TRACT_SUFFIX.
 ENDPOINT_GLOB_TEMPLATE = '{batch_dir}/{subject}/wm/freesurfer/{subject}/dpath/{tract}_avg16_syn_bbr/fmri_endpt{end}.pd.nii'
-ENDPOINT_THRESHOLD = 0.0
+# Primary endpoint definition: retain voxels above 5% of that endpoint map's
+# positive maximum after resampling to the fMRI/BnB grid.  This removes the
+# low-amplitude interpolation tail while adapting to each tract-end's PD scale.
+# The prespecified sensitivity values are 0.01 and 0.10.  Change this setting
+# only after preserving the primary output deliberately.
+ENDPOINT_RELATIVE_THRESHOLD = 0.05
 # Leave empty to process every numeric subject directory.
 SUBJECT_LIST = []
 # =============================================================================
@@ -42,6 +47,17 @@ def endpoint_file(subject, tract, end):
     pattern = ENDPOINT_GLOB_TEMPLATE.format(batch_dir=BATCH_DIR, subject=subject, tract=tract, end=end)
     files = sorted(glob.glob(pattern))
     return files[0] if len(files) == 1 else None, pattern, len(files)
+
+def threshold_endpoint(data, relative_threshold):
+    """Return a positive-PD endpoint mask and its auditable threshold values."""
+    if not 0 < relative_threshold <= 1:
+        raise ValueError('ENDPOINT_RELATIVE_THRESHOLD must be in (0, 1].')
+    positive = data[np.isfinite(data) & (data > 0)]
+    if positive.size == 0:
+        raise ValueError('endpoint image has no positive path-density values')
+    pd_max = float(positive.max())
+    cutoff = relative_threshold * pd_max
+    return np.isfinite(data) & (data > cutoff), pd_max, cutoff
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -77,11 +93,23 @@ def main():
                 eimg = nib.load(path)
                 if eimg.shape[:3] != gm.shape or not np.allclose(eimg.affine, bnb.affine, atol=1e-3):
                     qc.append({'subject':subj,'tract':tract,'endpoint':end,'status':'skip','message':'endpoint image is not in BnB grid'}); continue
-                endpoint = region_idx[source][(eimg.get_fdata() > ENDPOINT_THRESHOLD)[gm][region_idx[source]]]
+                try:
+                    endpoint_mask, pd_max, cutoff = threshold_endpoint(
+                        eimg.get_fdata(), ENDPOINT_RELATIVE_THRESHOLD
+                    )
+                except ValueError as exc:
+                    qc.append({'subject':subj,'tract':tract,'endpoint':end,'status':'skip','message':str(exc)})
+                    continue
+                endpoint = region_idx[source][endpoint_mask[gm][region_idx[source]]]
                 if len(endpoint) == 0:
-                    qc.append({'subject':subj,'tract':tract,'endpoint':end,'status':'skip','message':'no GM endpoint voxels'}); continue
+                    qc.append({'subject':subj,'tract':tract,'endpoint':end,'status':'skip',
+                               'message':f'no GM endpoint voxels at relative threshold {ENDPOINT_RELATIVE_THRESHOLD:g} '
+                                         f'(absolute PD cutoff {cutoff:g}; map max {pd_max:g})'})
+                    continue
                 records.append((tract, end, source, remote, endpoint))
-                qc.append({'subject':subj,'tract':tract,'endpoint':end,'status':'ok','message':f'{len(endpoint)} endpoint voxels'})
+                qc.append({'subject':subj,'tract':tract,'endpoint':end,'status':'ok',
+                           'message':f'{len(endpoint)} endpoint voxels; relative threshold '
+                                     f'{ENDPOINT_RELATIVE_THRESHOLD:g}; absolute PD cutoff {cutoff:g}; map max {pd_max:g}'})
         # Union across tracts prevents an endpoint of another tract being a "control".
         union = {r:set() for r in region_idx}
         for _,_,source,_,idx in records: union[source].update(idx.tolist())

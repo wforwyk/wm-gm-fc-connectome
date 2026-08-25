@@ -18,14 +18,14 @@
 #     - Collect all GM voxels in region A and region B from the bnb mask
 #     - Extract their pairwise FC values from the upper triangle of R
 #     - Extract their pairwise geodesic distances from the upper triangle of W_a
-#     - Compute mean_FC, mean_dist_mm, n_pairs
+#     - Compute descriptive mean_FC_r, inferential mean_FC_z, mean_dist_mm, n_pairs
 #     - If WM-present: attach tract name and mean RD from pathstats
 #
 # INPUT FILES (per subject):
 #   bnb mask   : gm/func/derived/bnbmdenoised_detrended_rest_{subj}.nii
 #   FC matrix  : gm/func/derived/fc_results/{subj}_R.npz          (arr_0, n_gm x n_gm)
 #   dist matrix: gm/anat/derived/dist_results/{subj}_W_a.npz      (arr_0, n_gm x n_gm)
-#   AAL atlas  : gm/derived/fmri_wsst_all_ROIs_AAL_u_rc1sub-{subj}_ses-01_T1w_YOUR_DARTEL_TEMPLATE.nii
+#   AAL atlas  : gm/derived/fmri_wsst_all_ROIs_AAL_u_rc1sub-{subj}_{SOURCE_SESSION}_T1w_{DARTEL_TEMPLATE_ID}.nii
 #   AAL summary: wm/derived/aal_summary/{subj}_aal_summary.csv
 #   pathstats  : wm/derived/pathstats/{subj}_pathstats.csv
 #
@@ -36,14 +36,16 @@
 #   {subj}_wm_present_absent_pairs.csv
 #     columns: subject, roi_id_a, roi_name_a, roi_id_b, roi_name_b,
 #              category_a, category_b, wm_group, tract_name,
-#              mean_FC, mean_dist_mm, n_voxel_pairs, mean_RD
+#              mean_FC, mean_FC_z, mean_dist_mm, n_voxel_pairs, mean_RD
 #
 # NOTES:
 #   - Only pairs where both regions are include=1 (from region_category CSV)
 #     are processed.
-#   - R.npz holds raw Pearson r; absolute value is NOT taken here and no
-#     Fisher-Z is applied, so raw r is preserved for slope analysis.
-#     (pt2_no03 applies arctanh to the per-pair means written here.)
+#   - R.npz holds raw Pearson r; absolute value is NOT taken here.  This
+#     script preserves its descriptive mean in ``mean_FC`` and writes
+#     ``mean_FC_z = mean(arctanh(r))`` for every region pair.  Part 2
+#     inference must use ``mean_FC_z``; applying arctanh after averaging r
+#     is invalid.
 #   - Geodesic distance from W_a is in mm.
 #   - R and W_a are dense (n_gm x n_gm). This script flattens their upper
 #     triangles once per subject via np.triu_indices, then addresses pairs
@@ -140,7 +142,7 @@ def get_pair_stats(idx_a, idx_b, n_gm, vec_r, vec_w):
     """
     Given voxel index arrays idx_a and idx_b (into the n_gm x n_gm matrix),
     extract all cross-pair FC and distance values from upper-triangle vectors.
-    Returns mean_FC, mean_dist, n_pairs.
+    Returns mean raw-r FC, mean Fisher-Z FC, mean distance, and n_pairs.
 
     Fully vectorised: the cross product of the two index sets is built with
     repeat/tile rather than a Python double loop, matching the `positions`
@@ -151,7 +153,7 @@ def get_pair_stats(idx_a, idx_b, n_gm, vec_r, vec_w):
     idx_a = np.asarray(idx_a, dtype=np.int64)
     idx_b = np.asarray(idx_b, dtype=np.int64)
     if idx_a.size == 0 or idx_b.size == 0:
-        return np.nan, np.nan, 0
+        return np.nan, np.nan, np.nan, 0
 
     # every (a, b) combination, ordered so that i < j (upper triangle)
     a = np.repeat(idx_a, idx_b.size)
@@ -163,7 +165,7 @@ def get_pair_stats(idx_a, idx_b, n_gm, vec_r, vec_w):
     # closed-form position below lands inside the upper-triangle vector.
     keep = i < j
     if not keep.any():
-        return np.nan, np.nan, 0
+        return np.nan, np.nan, np.nan, 0
     i, j = i[keep], j[keep]
 
     # (i, j) upper-triangle matrix indices -> 1D vector positions
@@ -174,7 +176,10 @@ def get_pair_stats(idx_a, idx_b, n_gm, vec_r, vec_w):
     dist_vals = vec_w[vec_pos].astype(float)
     dist_vals[~np.isfinite(dist_vals)] = np.nan  # exclude inf (disconnected GM pairs)
 
-    return float(np.nanmean(fc_vals)), float(np.nanmean(dist_vals)), int(vec_pos.size)
+    fc_vals[~np.isfinite(fc_vals)] = np.nan
+    fc_z_vals = np.arctanh(np.clip(fc_vals, -0.9999, 0.9999))
+    return (float(np.nanmean(fc_vals)), float(np.nanmean(fc_z_vals)),
+            float(np.nanmean(dist_vals)), int(vec_pos.size))
 
 # --------------------------------------------------------------------------
 # Helper: load WM-present pairs for a subject from aal_summary
@@ -315,7 +320,7 @@ for subj in SUBJECT_LIST:
             idx_a = region_voxel_map[roi_a]
             idx_b = region_voxel_map[roi_b]
 
-            mean_fc, mean_dist, n_pairs = get_pair_stats(
+            mean_fc, mean_fc_z, mean_dist, n_pairs = get_pair_stats(
                 idx_a, idx_b, n_gm, vec_r_1d, vec_w_1d
             )
 
@@ -337,6 +342,7 @@ for subj in SUBJECT_LIST:
                         'wm_group'     : 'wm_present',
                         'tract_name'   : tp['tract'],
                         'mean_FC'      : mean_fc,
+                        'mean_FC_z'    : mean_fc_z,
                         'mean_dist_mm' : mean_dist,
                         'n_voxel_pairs': n_pairs,
                         'mean_RD'      : tp['mean_RD']
@@ -354,6 +360,7 @@ for subj in SUBJECT_LIST:
                     'wm_group'     : 'wm_absent',
                     'tract_name'   : np.nan,
                     'mean_FC'      : mean_fc,
+                    'mean_FC_z'    : mean_fc_z,
                     'mean_dist_mm' : mean_dist,
                     'n_voxel_pairs': n_pairs,
                     'mean_RD'      : np.nan
