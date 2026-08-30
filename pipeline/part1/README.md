@@ -56,6 +56,8 @@ identifier in your own flow-field filename, not a directory path. The default
 | 3 | `wm/pt1_wm_no03_trac-all.sh` | TRACULA tractography |
 | 4–6 | `wm/pt1_wm_no04`–`no06` | endpoint coordinates/size and tract statistics |
 | 7–10 | `wm/pt1_wm_no07`–`no10` | AAL assignments, weights, and rankings |
+| 11 | `wm/pt1_wm_no11_wm-gm-fc_3d.py` | WM-metric × GM-distance × FC 3D scatter and voxel-pair CSVs |
+| 12 | `wm/pt1_wm_no12_wm-gm-fc_heatmap.py` | FC, geodesic-distance, and RD voxel-pair heatmaps |
 
 Copy and configure `pt1_wm_no02_subjectid_dmrirc.example` for each subject as
 `<subject>_dmrirc`. Its diffusion inputs and phase-encoding settings are
@@ -73,6 +75,7 @@ study-specific and must be verified against the acquisition protocol.
   neighbour for label images.
 - Review failed-subject reports and QC CSVs before sending products to Part 2.
 
-This package deliberately excludes the optional WM–GM 3D/heatmap visualization
-scripts. It contains the Part 1 processing steps required by the Part 2
-analysis pipeline.
+The visualization steps are optional for Part 2, but are included for
+per-subject inspection. Run no11 before no12: no12 reads no11's RD voxel-pair
+CSV. Both scripts use the same `BASE_DIR`, `SOURCE_SESSION`, and
+`DARTEL_TEMPLATE_ID` conventions as the preceding WM and template steps.

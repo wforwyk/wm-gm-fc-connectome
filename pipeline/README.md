@@ -54,7 +54,7 @@ SST-space AAL image, TRACULA per-subject configuration, and participant data.
 Part 1, per subject
   GM:       pt1_gm_no00 → pt1_gm_no01_02 → no03 → no04 → no05 → no06 → no07
   Template: pt1_template_no00 → no01 (manual, once) → no02 → no03 → no04 → no05 → no06 (QC)
-  WM:       pt1_wm_no01 → no02 (configure per subject) → no03 → no04 → no05 → no06 → no07 → no08 → no09 → no10
+  WM:       pt1_wm_no01 → no02 (configure per subject) → no03 → no04 → no05 → no06 → no07 → no08 → no09 → no10 → no11 → no12
 
 Part 2, group level
   pt2_no01
@@ -65,8 +65,8 @@ Part 2, group level
 
 `part1/README.md` gives the subject-level input/output contracts. The manual
 template step is in `part1/template/pt1_template_no01_NTU-DSI-122_manual.md`.
-Dedicated WM–GM visualization and paper-figure renderers are intentionally not
-included in this deployment package.
+The WM–GM visualization steps (`pt1_wm_no11` 3D scatter and
+`pt1_wm_no12` heatmaps) are included. Paper-figure renderers are not included.
 
 ## Settings that must agree across scripts
 
