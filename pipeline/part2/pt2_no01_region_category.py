@@ -11,7 +11,7 @@
 #                                "<id> <name> [<index>]". Most rows carry a
 #                                trailing index column; a few (35/36
 #                                Cingulate_Ant, 81/82 Thalamus) do not, so only
-#                                field 2 is the name. pt1_wm_no07 / no11 read
+#                                field 2 is the name. pt1_wm_no07 reads
 #                                the same file with the same rule, which is what
 #                                makes region names join across Part 1 and 2.
 #   - ROI_MNI_V7_1mm_Border.mat: border voxel coordinates per region,

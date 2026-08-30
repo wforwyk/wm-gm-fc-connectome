@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """
-no7_aal_summary.py
-====================
+pt1_wm_no07_aal_summary.py
+===========================
 PURPOSE : For each tract endpoint (endpt1, endpt2), scan all active voxels
           in endpt.pd.nii.gz directly against the DWI-space AAL atlas
           (dwi_wsst_all_ROIs_AAL) and compute the top-3 AAL regions
           with their overlap percentages.
-          Replaces no6~no9 (c1-matching pipeline) with direct DWI-space lookup.
 
 PIPELINE CONTEXT:
   endpt{1,2}.pd.nii.gz  (DWI space, TRACULA output)
       ↓ active voxels (pd > 0) looked up in dwi_wsst_all_ROIs_AAL
       → AAL region id + name per voxel
       → top3 by voxel count + percent
-  → aal_summary.csv  (same format as no9 output, drop-in replacement)
+  → {subj}_aal_summary.csv
 
 INPUT   : {BASE_DIR}/{subj}/wm/freesurfer/{subj}/dpath/{tract}/endpt{1,2}.pd.nii.gz
           {BASE_DIR}/{subj}/gm/derived/

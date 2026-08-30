@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-no8_aal_heatmap.py
-=========================
+pt1_wm_no08_aal_heatmap.py
+============================
 PURPOSE : Generate AAL-AAL weighted connectivity matrices per WM metric
           by combining pathstats (WM scalar) with AAL endpoint assignments.
           Produces edge detail CSVs and heatmap images.
 
 PIPELINE CONTEXT:
   no6 → {subj}_pathstats.csv          (tract × WM metrics)
-  no10 → {subj}_aal_summary.csv       (tract × endpoint × top3 AAL regions)
+  no7 → {subj}_aal_summary.csv        (tract × endpoint × top3 AAL regions)
       ↓ weight = metric_avg × (top_i_percent/100 × top_j_percent/100)
   → aal_aal_{metric}_matrix_{subj}.csv  (AAL × AAL weighted matrix)
   → aal_edge_details_{metric}_{subj}.csv

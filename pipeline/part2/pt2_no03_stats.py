@@ -407,7 +407,7 @@ print("Saved: pt2_no3_fig_scatter.png")
 pool_wmp = tract_pool[tract_pool['wm_group'] == 'wm_present'].dropna(subset=['mean_RD', 'mean_FC_z'])
 pool_wmp = pool_wmp[pool_wmp['mean_RD'] > 0].copy()
 
-# 데이터 필터링: 'other'에 해당하는 경로(lh.cst, rh.cst 등) 명시적 제외
+# Exclude the residual 'other' pathway category (e.g., lh.cst and rh.cst).
 valid_pathways = ['commissural pathways', 'projection pathways', 'association pathways']
 pool_wmp = pool_wmp[pool_wmp['pathway_type'].isin(valid_pathways)].copy()
 
@@ -428,7 +428,7 @@ if len(pool_wmp) > 50:
     def exp_decay(x, a, b):
         return a * np.exp(-b * x)
 
-    # overall fit (이제 'other' 경로가 완전히 배제된 데이터로만 피팅을 진행합니다)
+    # Fit only the data remaining after exclusion of the 'other' pathway category.
     try:
         popt, _ = curve_fit(exp_decay, pool_wmp['mean_RD'], pool_wmp['mean_FC_z'],
                             p0=[0.15, 2000], maxfev=10000,
