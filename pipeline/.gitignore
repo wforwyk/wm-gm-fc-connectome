@@ -1,0 +1,18 @@
+# Participant data and pipeline products
+rawdata/
+derivatives/
+results/
+
+# Generated files and local run state
+*.log
+*.tmp
+*.pyc
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+
+# Local configuration and agent context
+.agents/
+.claude/
+AGENTS.md
+CLAUDE.md
