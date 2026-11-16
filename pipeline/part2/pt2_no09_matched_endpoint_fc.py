@@ -29,7 +29,7 @@ INPUT_DIR='/path/to/your/project/derivatives/results/part2/no08_endpoint_covaria
 OUTPUT_DIR='/path/to/your/project/derivatives/results/part2/no09_matched_endpoint_fc'
 MATCH_CALIPER=2.0  # maximum standardized Euclidean distance; set None to disable
 RANDOM_SEED=20260729
-MIN_MATCHED_VOXELS=10  # primary matched sensitivity-analysis inclusion criterion
+MIN_MATCHED_VOXELS=10  # primary matched-analysis inclusion criterion
 # Participant selection: edit cohort_settings.py.
 # =============================================================================
 
