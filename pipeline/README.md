@@ -65,7 +65,8 @@ TPL: no05 endpoint reslice [requires GM no06 BnB + WM no03 dpath + alignment QC]
 WM:  no04 → no05 → no06 → no07 [requires TPL no03 DWI-space AAL + paired LUT]
      → no08 → no09/no10; no11 [requires GM no06] → no12
 Part 2: no01 reference tables [export LUT + canonical crosswalk/border file]
-     Region-pair FC: no02 → no03 → no03b (optional composition sensitivity)
+     Region-pair FC: no02 → no03 → no03c (Aim 1 spline GLM)
+     Optional composition sensitivity: no03 → no03b
      Endpoint FC: no04 → no05 → no06
      Matched: no07 [GM c2mean + BnB] → no08 → no09 → no10
      Networks: TPL no07 → no11 [SST AAL + SST Yeo] → no12 → no13
@@ -105,6 +106,7 @@ All default group output directories are under `derivatives/results/part2/`.
 | no02 | R/W_a/BnB + fMRI AAL + WM aal_summary/pathstats → `{id}_wm_present_absent_pairs.csv` in `no02_wm_fc` and tract eligibility audits |
 | no03 | no02 pairs → pair/tract tables, subject effects, distance-adjusted statistics and figures in `no03_summary_stats` |
 | no03b | no03 pair/tract tables → composition, participant contrasts, and sensitivity statistics in `no03b_composition_sensitivity` |
+| no03c | no03 pair/tract tables + optional adjacency → participant-level spline GLM, distance profiles and sensitivity statistics in `no03c_aim1_glm_spline` |
 | no04 | fMRI endpoint PD + AAL/BnB/aal_summary → `{id}_endpoint_voxel_labels.npz` in `no04_endpoint_voxels` |
 | no05 | no04 labels + R/W_a + adjacency → `{id}_aim2_endpoint_fc.csv` in `no05_endpoint_fc` |
 | no06 | no05 rows → participant-level endpoint/target contrasts in `no06_endpoint_stats` |
@@ -172,8 +174,8 @@ No03b repeats the distance-adjusted contrast across all pairs, restricts it to
 cortical–cortical pairs, adjusts for region-category composition, and estimates
 within-category-pair contrasts where both WM groups exist. It also reports
 pathway contrasts and unadjusted cortical–cortical descriptives. Cortical means
-the atlas category `cortical` only. Hippocampus, parahippocampal gyrus, and
-amygdala are `subcortical_limbic`; ACC subdivisions are `acc_subdivision`.
+the atlas category `cortical` only. Hippocampus and amygdala are
+`subcortical_limbic`.
 BH-FDR is applied within each named output family.
 
 Defaults require at least one WM-present pair, three WM-absent pairs, and five
@@ -191,3 +193,36 @@ Outputs in `no03b_composition_sensitivity`:
 - `pt2_no3b_cc_descriptives_summary.csv`: across-participant descriptive summaries.
 - `pt2_no3b_noncortical_wm_present_regions.csv`: non-cortical regions represented
   in WM-present pairs, with pair and participant counts.
+
+## Aim 1 spline GLM
+
+Run `python part2/pt2_no03c_aim1_glm.py` after no03. Configure the input/output
+paths in USER SETTINGS; participant selection follows `part2/cohort_settings.py`.
+The main model fits Fisher-z FC to a restricted cubic spline of log geodesic
+distance and WM presence separately in each participant, using cortical–cortical
+region pairs. Group tests use participant-level estimates. Outputs include the
+WM coefficient, distance-related FC drop, class-specific effects, R² partition,
+distance profiles and sensitivity analyses. `--selftest` uses synthetic data.
+
+## Optional exploratory WM microstructure analysis
+
+`part2/pt2_no03e_aim1_wm_strength_within_tract.py` is optional and is not a main
+pipeline step. Run it only to explore associations between tract FA/MD/AD/RD
+and distance-adjusted FC within the same tract across participants.
+
+Configure USER SETTINGS, then run:
+
+```bash
+python part2/pt2_no03e_aim1_wm_strength_within_tract.py
+```
+
+Inputs are the no03 pair/tract tables and each participant's Part 1 pathstats CSV.
+Keep `pt2_no03c_aim1_glm.py` in the same directory for its spline helpers; saved
+no03c results are not required. Participant selection follows `cohort_settings.py`.
+The models include tract fixed effects, with an additional participant fixed effect
+in M2; standard errors are clustered by participant. Each metric is fitted separately,
+with BH correction within the reported families. These are exploratory associations.
+
+Outputs go to `no03e_aim1_wm_strength_within_tract`, including model statistics,
+participant–tract tables, per-tract correlations, leave-one-tract-out estimates and
+figures. `--selftest` uses synthetic data; `--figures-only` redraws saved results.
