@@ -49,8 +49,7 @@
 # NOTES:
 #   - 'cortico-cortical' = both regions have category 'cortical' (same
 #     definition as is_cortical in no11/no12).
-#     ACC subdivisions (acc_subdivision) and the AAL3 'subcortical_limbic' regions (hippocampus,
-#     parahippocampal gyrus, amygdala) are therefore NOT counted as cortical.
+#     Hippocampus and amygdala are subcortical_limbic.
 #   - A participant enters a contrast only if it has at least MIN_PRESENT
 #     WM-present and MIN_ABSENT WM-absent pairs in the relevant set.
 #   - BH-FDR is applied within the families named in the 'family' column.

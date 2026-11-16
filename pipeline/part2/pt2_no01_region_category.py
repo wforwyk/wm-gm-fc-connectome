@@ -42,7 +42,9 @@ def read_lut(path):
 
 
 def assign_category(roi_id):
-    if roi_id in range(41, 47):
+    if roi_id in [43, 44]:
+        return 'cortical'
+    elif roi_id in [41, 42, 45, 46]:
         return 'subcortical_limbic'
     elif roi_id in range(75, 81):
         return 'subcortical_basal'
@@ -59,7 +61,7 @@ def assign_category(roi_id):
     elif roi_id in range(121, 151):
         return 'thalamic_nuclei'
     elif roi_id in range(151, 157):
-        return 'acc_subdivision'
+        return 'cortical'
     elif roi_id in [157, 158]:
         return 'n_acc'
     elif roi_id in range(159, 171):
@@ -68,7 +70,7 @@ def assign_category(roi_id):
         return 'unknown'
 
 INCLUDE_CATEGORIES = {
-    'cortical', 'subcortical_limbic', 'thalamus_generic', 'thalamic_nuclei', 'acc_subdivision'
+    'cortical', 'subcortical_limbic', 'thalamus_generic', 'thalamic_nuclei'
 }
 
 

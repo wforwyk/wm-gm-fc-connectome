@@ -37,7 +37,7 @@
 # NOTES:
 #   - Included pairs only (both regions include==1 from aal3_region_category.csv)
 #     This includes: cortical, subcortical_limbic, thalamus_generic, thalamic_nuclei,
-#     acc_subdivision — consistent with pt2_no2 include flags.
+#     consistent with pt2_no2 include flags.
 #     Projection pathways (ATR, AR, OR) thus have proper n as their thalamic
 #     endpoints pass the include flag after canonical-name category mapping.
 #   - Fisher-Z FC is supplied by pt2_no02 as mean(arctanh(r)) at the voxel-pair
@@ -152,6 +152,7 @@ def benjamini_hochberg(pvals):
 # --------------------------------------------------------------------------
 region_df    = pd.read_csv(os.path.join(TEMPLATE_DIR, 'aal3_region_category.csv'))
 included_ids = set(region_df[region_df['include'] == 1]['roi_id'])
+roi_to_category = dict(zip(region_df['roi_id'], region_df['category']))
 
 files = sorted(glob.glob(os.path.join(INPUT_DIR, '*_wm_present_absent_pairs.csv')))
 files = select_files(files)
@@ -171,7 +172,11 @@ for f in files:
             f'{f} is missing required pt2_no02 columns {sorted(missing)}. '
             'Rerun pt2_no02 before pt2_no03; do not apply Fisher-Z after averaging r.'
         )
-    df = df[df['roi_id_a'].isin(included_ids) & df['roi_id_b'].isin(included_ids)]
+    df = df[df['roi_id_a'].isin(included_ids) & df['roi_id_b'].isin(included_ids)].copy()
+    df['category_a'] = df['roi_id_a'].map(roi_to_category)
+    df['category_b'] = df['roi_id_b'].map(roi_to_category)
+    if df[['category_a', 'category_b']].isna().any().any():
+        raise RuntimeError(f'{f}: region IDs missing from the category table')
     dfs.append(df)
 
 tract_pool = pd.concat(dfs, ignore_index=True)
@@ -572,7 +577,7 @@ with open(pathway_txt_path, 'w') as f:
     f.write("Region filter (consistent with pt2_no2):\n")
     f.write("  include==1 from aal3_region_category.csv\n")
     f.write("  (cortical, subcortical_limbic, thalamus_generic,\n")
-    f.write("   thalamic_nuclei, acc_subdivision)\n\n")
+    f.write("   thalamic_nuclei)\n\n")
     f.write("System tests: all four pathway classes; other comprises bilateral fornix.\n")
     f.write("See pt2_no3_system_stats.txt for distance-adjusted contrasts.\n\n")
 
