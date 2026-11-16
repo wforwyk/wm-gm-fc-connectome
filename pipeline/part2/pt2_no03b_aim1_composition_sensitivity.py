@@ -3,7 +3,7 @@
 # pt2_no03b_aim1_composition_sensitivity.py
 #
 # PURPOSE:
-#   Sensitivity analysis for the Aim 1 primary contrast (pt2_no03).  The pooled
+#   Sensitivity analysis for the Aim 1 residual contrast (pt2_no03).  The pooled
 #   WM-present vs WM-absent comparison mixes region-pair categories: WM-present
 #   pairs are mostly cortico-cortical, whereas WM-absent pairs include many
 #   pairs with thalamic or subcortical-limbic regions.  Log-distance adjustment
@@ -15,7 +15,7 @@
 #
 # ANALYSES (participant is the unit of inference; one-sample t test per contrast):
 #   A_all_pairs_replication
-#       Original no03 primary contrast (log-distance only).  Must reproduce
+#       No03 residual sensitivity contrast (log-distance only).  Must reproduce
 #       the no03 result when participant and pair eligibility are identical.
 #   B_cortico_cortical_only
 #       Both groups restricted to pairs with both regions in category 'cortical';
@@ -225,7 +225,7 @@ for subj, grp_all in pair_df.groupby('subject'):
         rows.append({'subject': subj, 'analysis': 'C_category_adjusted', 'class': c,
                      'family': 'class_C',
                      'diff': contrast(grp_all, True, class_mask=mask_all)})
-    # reference: original no03 class-wise estimate (log-distance only, all pairs)
+    # reference: no03 class-wise residual estimate (log-distance only, all pairs)
     for c in CLASS_ORDER:
         rows.append({'subject': subj, 'analysis': 'A_all_pairs_replication', 'class': c,
                      'family': 'class_A', 'diff': contrast(grp_all, False, class_mask=members[c])})

@@ -4,6 +4,10 @@ Subject-space white-matter tract processing, grey-matter voxel-wise functional
 connectivity (FC), and participant-level group inference. Part 1 creates subject
 outputs; Part 2 uses those outputs and atlas reference tables. Supply your own input data and atlas/template files.
 
+This package provides the imaging and analysis pipeline for application to other
+datasets. Manuscript-specific figure preparation, network-cell follow-up statistics
+and downstream table-level multiplicity adjustments are outside its scope.
+
 ## Requirements
 
 | Component | Requirement / use |
@@ -40,12 +44,12 @@ apply across participant processing and group-table readers. Empty selection use
 | Setting | Stages / contract |
 | --- | --- |
 | `BATCH_DIR` | All subject stages, MAT input paths, dmrirc subject paths |
-| `SOURCE_SESSION`, `DARTEL_TEMPLATE_ID` | Template no00/no02/no03/no04; WM no07/no11; Part 2 no02/no04/no05/no08/no09 |
+| `SOURCE_SESSION`, `DARTEL_TEMPLATE_ID` | Template no00/no02/no03/no04; WM no07/no11; Part 2 no02/no08/no09 |
 | `AAL_LUT` | WM no07/no11 and Part 2 no01: same DSI Studio export LUT |
 | `ORIGINAL_AAL_TXT`, `BORDER_MAT` | Part 2 no01: canonical name/category crosswalk and canonical border geometry only |
-| `TRACT_SUFFIX` | Template no04/no05 and Part 2 no02/no04/no08; default `_avg16_syn_bbr` |
-| `QC_EXCLUDE` | Part 2 no02/no03/no04/no08: bilateral CST and MCP only; retain rh.atr/acomm |
-| `ENDPOINT_RELATIVE_THRESHOLD` | Part 2 no04/no08: 0.05 of positive endpoint-map maximum; 0.01/0.10 require separate sensitivity output locations |
+| `TRACT_SUFFIX` | Template no04/no05 and Part 2 no02/no08; default `_avg16_syn_bbr` |
+| `QC_EXCLUDE` | Part 2 no02/no03/no08: bilateral CST and MCP only; retain rh.atr/acomm |
+| `ENDPOINT_RELATIVE_THRESHOLD` | Part 2 no08: 0.05 of positive endpoint-map maximum; 0.01/0.10 require separate sensitivity output locations |
 | `WM_PROB_THRESHOLDS`, `PRIMARY_WM_PROB_THRESHOLD` | no07 produces 0.5/0.7/0.9 maps; no08 primary setting 0.5 generates the matching filename |
 | `MIN_MATCHED_VOXELS` | no09/no10: 10; no10 also applies matching-balance requirements |
 | Acquisition parameters | no01 MAT slice-timing settings ↔ GM no03 `TR`, `N_VOLS`, `N_SLICES`, `ONSET_SLICE`; GM no04 `TR` |
@@ -67,7 +71,6 @@ WM:  no04 → no05 → no06 → no07 [requires TPL no03 DWI-space AAL + paired L
 Part 2: no01 reference tables [export LUT + canonical crosswalk/border file]
      Region-pair FC: no02 → no03 → no03c (Aim 1 spline GLM)
      Optional composition sensitivity: no03 → no03b
-     Endpoint FC: no04 → no05 → no06
      Matched: no07 [GM c2mean + BnB] → no08 → no09 → no10
      Networks: TPL no07 → no11 [SST AAL + SST Yeo] → no12 → no13
                no12 also requires no09 + no10 eligibility/subject tables
@@ -107,9 +110,6 @@ All default group output directories are under `derivatives/results/part2/`.
 | no03 | no02 pairs → pair/tract tables, subject effects, distance-adjusted statistics and figures in `no03_summary_stats` |
 | no03b | no03 pair/tract tables → composition, participant contrasts, and sensitivity statistics in `no03b_composition_sensitivity` |
 | no03c | no03 pair/tract tables + optional adjacency → participant-level spline GLM, distance profiles and sensitivity statistics in `no03c_aim1_glm_spline` |
-| no04 | fMRI endpoint PD + AAL/BnB/aal_summary → `{id}_endpoint_voxel_labels.npz` in `no04_endpoint_voxels` |
-| no05 | no04 labels + R/W_a + adjacency → `{id}_aim2_endpoint_fc.csv` in `no05_endpoint_fc` |
-| no06 | no05 rows → participant-level endpoint/target contrasts in `no06_endpoint_stats` |
 | no07 | c2mean + BnB → WM probability-threshold masks and `wm_boundary_distance_c2thr0p5_{id}.nii.gz` under each subject's `gm/anat/derived/aim2_wm_boundary_distance` |
 | no08 | no07 distance + c1mean + endpoints/AAL/BnB → `{id}_aim2_endpoint_covariates.npz` in `no08_endpoint_covariates` |
 | no09 | no08 covariates + R/W_a/adjacency → matched FC and matching-balance CSVs in `no09_matched_endpoint_fc` |
@@ -118,12 +118,11 @@ All default group output directories are under `derivatives/results/part2/`.
 | no12 | no09 + no10 eligibility + no11 → participant/tract/system/network effects in `no12_tract_network_prepare`, reconciled to no10 |
 | no13 | no12 effects → participant-level tests in `no13_tract_network_stats` |
 
-No03 uses a within-participant WM-present minus WM-absent contrast after
+No03 prepares the pair/tract tables for the primary Aim 1 spline GLM in no03c.
+Its sensitivity analysis uses a within-participant WM-present minus WM-absent contrast after
 participant-specific FC~log(geodesic-distance) residualization, followed by a
 one-sample t-test across participants. Multiple
-tracts supporting the same region pair are collapsed for the primary pair-level
-analysis. The optional RD–FC screen is disabled by default
-(`RUN_EXPLORATORY_RD_FC = False`), exploratory, and not a myelin-specific test.
+tracts supporting the same region pair are collapsed for pair-level analysis.
 
 The extraction set contains 40 TRACULA tracts: the 42-tract atlas excluding
 `lh.cst` and `rh.cst`. The group-analysis set contains 39 tracts, excluding `mcp`.
@@ -135,7 +134,7 @@ Bilateral fornix is classified as other. MCP has the same classification but is
 excluded from group analysis. All four classes enter the tract-system analyses.
 TRACULA reference: Maffei et al. (2021), NeuroImage 245:118706.
 
-In no03, each system contrast uses the participant's primary FC ~ log(distance)
+In no03, each system contrast uses the participant's sensitivity FC ~ log(distance)
 fit and counts each region pair once within that system. All systems share the
 participant's WM-absent comparison pool. Four distance-adjusted tests receive
 BH-FDR correction; raw differences are descriptive only.

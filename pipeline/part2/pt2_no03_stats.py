@@ -3,21 +3,22 @@
 # pt2_no03_stats.py
 #
 # PURPOSE:
+#   Prepare pair/tract tables for the primary Aim 1 spline GLM in pt2_no03c.
+#   Estimate a log-distance residual contrast as a sensitivity analysis.
 #   Aggregate pt2_no2 per-subject CSVs and test whether WM-present pairs
 #   show higher FC than WM-absent pairs after subject-specific adjustment for
 #   log geodesic distance.  The raw contrast is retained as descriptive;
-#   tract-level rows are retained only for tract/RD analyses.
+#   tract-level rows support pathway analyses and optional pt2_no03e.
 #
 # KEY DESIGN:
 #   WM group (present/absent) is a WITHIN-subject factor. Every subject has
 #   both WM-present and WM-absent pairs. Statistical tests are therefore
 #   conducted at the subject level:
-#     Main test  : per-subject mean residual-FC diff (present - absent) after
+#     Sensitivity: per-subject mean residual-FC diff (present - absent) after
 #                  subject-specific FC~log(distance) residualization, tested
 #                  against zero via one-sample t-test (df = n_subj - 1)
 #     System test: distance-adjusted, deduplicated within each of four pathway
 #                  classes: commissural, projection, association, other (fornix).
-#     Optional RD screen: disabled by default; descriptive, not myelin-specific.
 #
 # INPUT:
 #   - pt2_no2 output CSVs: {subj}_wm_present_absent_pairs.csv
@@ -26,12 +27,10 @@
 # OUTPUT:
 #   - pt2_no3_pair_level.csv / pt2_no3_pooled_tract_level.csv
 #   - pt2_no3_distance_adjusted_stats.csv / pt2_no3_subject_effects.csv
-#   - pt2_no3_within_subj_stats.txt  : primary distance-adjusted t-test
+#   - pt2_no3_within_subj_stats.txt  : sensitivity distance-adjusted t-test
 #   - pt2_no3_system_stats.txt       : per-system within-subject t-test
-#   - exploratory_rd_fc/             : optional descriptive RD-FC outputs
 #   - pt2_no3_fig_violin.png         : FC distribution by WM group
 #   - pt2_no3_fig_scatter.png        : FC ~ distance (log fit, red vs blue)
-#   - pt2_no3_fig_fc_rd.png          : FC ~ RD (exp decay, per-system fits)
 #   - pt2_no3_fig_system.png         : within-subject FC diff by tract system
 #
 # NOTES:
@@ -46,9 +45,7 @@
 #   - Violin/scatter show pooled pair x subject data for visualization only;
 #     statistical annotations reflect within-subject tests
 #   - System bar y-axis = mean within-subject diff ± SEM
-#   - FC ~ RD: exponential decay (a * exp(-b * RD)) fit overall and per system
 #
-# AUTHOR: BrainWorld pipeline
 # =============================================================================
 
 import os
@@ -59,7 +56,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy import stats
-from scipy.optimize import curve_fit
 
 from cohort_settings import SUBJECTS, SUBJECTS_TXT, EXCLUDE_SUBJECTS, select_subjects, select_files, filter_subject_rows
 
@@ -69,8 +65,6 @@ from cohort_settings import SUBJECTS, SUBJECTS_TXT, EXCLUDE_SUBJECTS, select_sub
 INPUT_DIR    = '/path/to/your/project/derivatives/results/part2/no02_wm_fc'
 TEMPLATE_DIR = '/path/to/your/project/derivatives/template/AAL3'
 OUTPUT_DIR   = '/path/to/your/project/derivatives/results/part2/no03_summary_stats'
-# Optional descriptive RD-FC screen; not a primary test or myelin-specific measure.
-RUN_EXPLORATORY_RD_FC = False
 QC_EXCLUDE = {'lh.cst', 'rh.cst', 'mcp'}
 # =============================================================================
 
@@ -186,7 +180,7 @@ tract_pool                 = tract_pool[np.isfinite(tract_pool['mean_FC_z']) & n
 tract_pool                 = tract_pool.dropna(subset=['mean_FC_z', 'mean_dist_mm'])
 
 # pt2_no02 writes one WM-present row per tract.  That is needed
-# for tract/RD analyses, but the Aim 1 primary test is a REGION-PAIR analysis.
+# for pathway and optional microstructure analyses, but the Aim 1 residual-contrast sensitivity analysis is a REGION-PAIR analysis.
 # Collapse the duplicate tract rows before estimating the WM-present effect.
 pair_agg = {
     'roi_id_a': 'first', 'roi_id_b': 'first', 'roi_name_a': 'first',
@@ -205,7 +199,7 @@ print(f"WM-present pairs: {(pair_df['wm_group']=='wm_present').sum()}")
 print(f"WM-absent pairs : {(pair_df['wm_group']=='wm_absent').sum()}")
 
 # --------------------------------------------------------------------------
-# 2. Aim 1 primary test: distance-adjusted, within-subject WM effect
+# 2. Aim 1 residual-contrast sensitivity analysis: distance-adjusted, within-subject WM effect
 # --------------------------------------------------------------------------
 def one_sample_summary(values, label):
     values = np.asarray(values, dtype=float)
@@ -247,23 +241,23 @@ if subj_df.empty:
     raise RuntimeError('No subjects had both valid WM-present and WM-absent pairs.')
 subj_df.to_csv(os.path.join(OUTPUT_DIR, 'pt2_no3_subject_effects.csv'), index=False)
 raw_result = one_sample_summary(subj_df['raw_diff'], 'Raw within-subject WM-present minus WM-absent FC')
-primary_result = one_sample_summary(subj_df['distance_adjusted_diff'],
-                                    'Primary: log-distance-adjusted within-subject WM-present minus WM-absent FC')
-n_subj = primary_result['n_subjects']
+sensitivity_result = one_sample_summary(subj_df['distance_adjusted_diff'],
+                                    'Sensitivity: log-distance-adjusted within-subject WM-present minus WM-absent FC')
+n_subj = sensitivity_result['n_subjects']
 diffs = subj_df['distance_adjusted_diff'].to_numpy()
-t_main, p_main, se_main = primary_result['t'], primary_result['p'], primary_result['se']
-pd.DataFrame([primary_result, raw_result]).to_csv(
+t_main, p_main, se_main = sensitivity_result['t'], sensitivity_result['p'], sensitivity_result['se']
+pd.DataFrame([sensitivity_result, raw_result]).to_csv(
     os.path.join(OUTPUT_DIR, 'pt2_no3_distance_adjusted_stats.csv'), index=False)
 
-print(f"\n=== Primary distance-adjusted within-subject test ===")
+print(f"\n=== Sensitivity distance-adjusted within-subject test ===")
 print(f"N subjects     : {n_subj}")
-print(f"Mean difference: {primary_result['mean']:.4f} +/- {se_main:.4f} SE")
+print(f"Mean difference: {sensitivity_result['mean']:.4f} +/- {se_main:.4f} SE")
 print(f"t({n_subj-1}) = {t_main:.3f}, p = {p_main:.4e}")
 
 with open(os.path.join(OUTPUT_DIR, 'pt2_no3_within_subj_stats.txt'), 'w') as f:
-    f.write('Primary analysis: subject-specific log(geodesic distance)-adjusted WM effect\n')
+    f.write('Sensitivity analysis: subject-specific log(geodesic distance)-adjusted WM effect\n')
     f.write('One row per subject-AAL pair; multi-tract WM-present pairs are deduplicated.\n\n')
-    f.write(pd.DataFrame([primary_result, raw_result]).to_string(index=False))
+    f.write(pd.DataFrame([sensitivity_result, raw_result]).to_string(index=False))
 
 # --------------------------------------------------------------------------
 # 3. Within-subject test per tract system
@@ -275,9 +269,9 @@ SYSTEM_LABEL = {
     'association pathways': 'Association',
     'other pathways': 'Other (fornix)',
 }
-# Distance-adjusted, consistent with the Aim 1 primary test:
+# Distance-adjusted, consistent with the Aim 1 residual-contrast sensitivity analysis:
 # each row is residualised with that subject's own FC ~ log(distance) fit from the
-# primary analysis (estimated on deduplicated region pairs).  Within a system, a
+# residual analysis (estimated on deduplicated region pairs).  Within a system, a
 # region pair supported by several tracts of that system is counted once.  The
 # raw (unadjusted) difference is kept as a descriptive column only.
 sys_pool = tract_pool[(tract_pool['mean_dist_mm'] > 0) &
@@ -328,7 +322,7 @@ if not sys_df.empty:
     sys_df['p_fdr_bh'] = benjamini_hochberg(sys_df['pval'])
 with open(os.path.join(OUTPUT_DIR, 'pt2_no3_system_stats.txt'), 'w') as f:
     f.write("Within-subject t-test: WM-present (by pathway type) vs WM-absent FC,\n")
-    f.write("log(geodesic distance)-adjusted with each subject's primary-analysis fit.\n")
+    f.write("log(geodesic distance)-adjusted with each subject's log-distance fit.\n")
     f.write("raw_mean_diff_descriptive = unadjusted difference (descriptive only).\n")
     f.write("Tract classification: MCP and bilateral FX are other\n")
     f.write("All four pathway classes (commissural, projection, association, other = bilateral fornix)\n")
@@ -336,71 +330,7 @@ with open(os.path.join(OUTPUT_DIR, 'pt2_no3_system_stats.txt'), 'w') as f:
     f.write(sys_df.to_string(index=False))
 
 # --------------------------------------------------------------------------
-# 4. Optional descriptive within-subject RD-FC screen
-# --------------------------------------------------------------------------
-if RUN_EXPLORATORY_RD_FC:
-    rd_output_dir = os.path.join(OUTPUT_DIR, 'exploratory_rd_fc')
-    os.makedirs(rd_output_dir, exist_ok=True)
-
-    subj_rd_corr = []
-    for subj, grp in tract_pool.groupby('subject'):
-        wmp = grp[grp['wm_group'].eq('wm_present')].dropna(
-            subset=['mean_RD', 'mean_FC_z']
-        ).copy()
-        if len(wmp) < 3:
-            continue
-
-        r, p = stats.spearmanr(wmp['mean_RD'], wmp['mean_FC_z'])
-        if not np.isfinite(r):
-            continue
-
-        pathway_counts = wmp['pathway_type'].value_counts()
-        n_unique_pairs = int(wmp['pair_id'].nunique())
-        subj_rd_corr.append({
-            'subject': subj,
-            'spearman_r': r,
-            'spearman_p': p,
-            'n_tract_rows': len(wmp),
-            'n_unique_region_pairs': n_unique_pairs,
-            'n_reused_fc_rows': int(len(wmp) - n_unique_pairs),
-            'n_commissural_rows': int(pathway_counts.get('commissural pathways', 0)),
-            'n_projection_rows': int(pathway_counts.get('projection pathways', 0)),
-            'n_association_rows': int(pathway_counts.get('association pathways', 0)),
-        })
-
-    rd_corr_df = pd.DataFrame(subj_rd_corr)
-    if len(rd_corr_df) > 0:
-        rd_corr_df.to_csv(
-            os.path.join(rd_output_dir, 'rd_fc_subject_correlations.csv'),
-            index=False,
-        )
-
-        r_vals = rd_corr_df['spearman_r'].to_numpy()
-        t_rd, p_rd = stats.ttest_1samp(r_vals, 0)
-        se_rd = r_vals.std(ddof=1) / np.sqrt(len(r_vals))
-        print("\n=== Exploratory descriptive RD-FC screen ===")
-        print(f"N subjects: {len(r_vals)}")
-        print(f"Mean r    : {r_vals.mean():.4f} +/- {se_rd:.4f}")
-        print(f"t({len(r_vals)-1}) = {t_rd:.3f}, p = {p_rd:.4e}")
-
-        with open(os.path.join(rd_output_dir, 'rd_fc_summary.txt'), 'w') as f:
-            f.write("Exploratory descriptive RD-FC screen\n")
-            f.write("Per-subject Spearman r across WM-present tract rows.\n")
-            f.write("Regional FC can be repeated when several tracts support the same pair.\n")
-            f.write("The screen does not adjust for distance or pathway identity.\n")
-            f.write("RD is not a myelin-specific measure.\n\n")
-            f.write(f"N subjects : {len(r_vals)}\n")
-            f.write(f"Mean r     : {r_vals.mean():.4f}\n")
-            f.write(f"SE         : {se_rd:.4f}\n")
-            f.write(f"t({len(r_vals)-1}) = {t_rd:.3f}\n")
-            f.write(f"p          : {p_rd:.4e}\n")
-    else:
-        print("Exploratory RD-FC screen produced no eligible participant summaries.")
-else:
-    print("\nExploratory RD-FC screen skipped (RUN_EXPLORATORY_RD_FC=False).")
-
-# --------------------------------------------------------------------------
-# 5. Figures
+# 4. Figures
 # --------------------------------------------------------------------------
 
 # --- Fig 1: Violin ---
@@ -474,47 +404,6 @@ plt.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, 'pt2_no3_fig_scatter.png'), dpi=300)
 plt.close()
 print("Saved: pt2_no3_fig_scatter.png")
-
-# --- Optional descriptive FC ~ RD plot ---
-if RUN_EXPLORATORY_RD_FC and 'rd_corr_df' in locals() and len(rd_corr_df) > 0:
-    pool_wmp = tract_pool[tract_pool['wm_group'].eq('wm_present')].dropna(
-        subset=['mean_RD', 'mean_FC_z']
-    ).copy()
-    pool_wmp = pool_wmp[pool_wmp['mean_RD'] > 0]
-    valid_pathways = ['commissural pathways', 'projection pathways', 'association pathways']
-    pool_wmp = pool_wmp[pool_wmp['pathway_type'].isin(valid_pathways)]
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-
-    sys_colors = {
-        'commissural pathways': '#C0392B',
-        'projection pathways' : '#2980B9',
-        'association pathways': '#27AE60',
-    }
-
-    for sys_name, grp in pool_wmp.groupby('pathway_type'):
-        col = sys_colors.get(sys_name, '#AAAAAA')
-        grp_plot = grp.sample(min(4000, len(grp)), random_state=42)
-        ax.scatter(grp_plot['mean_RD'], grp_plot['mean_FC_z'],
-                   alpha=0.20, s=6, color=col,
-                   label=f'{sys_name} (rows={len(grp):,})')
-
-    ax.set_xlabel('Mean RD (mm2/s)', fontsize=11)
-    ax.set_ylabel('Mean FC (Fisher Z)', fontsize=11)
-    ax.set_title('Descriptive FC and RD across WM-present tract rows', fontsize=11)
-    ax.legend(fontsize=8, loc='upper right')
-
-    ax.text(0.05, 0.97,
-            f'Mean participant Spearman r={r_vals.mean():.3f}; descriptive screen',
-            ha='left', va='top', transform=ax.transAxes, fontsize=8.5, color='#222',
-            bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='#ccc', alpha=0.9))
-
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    plt.tight_layout()
-    fig.savefig(os.path.join(rd_output_dir, 'rd_fc_descriptive.png'), dpi=300)
-    plt.close()
-    print("Saved: exploratory_rd_fc/rd_fc_descriptive.png")
 
 # --- Fig 3: Within-subject diff by pathway type ---
 # Plot all four pathway classes against the same participant-level WM-absent pool.

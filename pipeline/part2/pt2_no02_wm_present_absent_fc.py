@@ -60,7 +60,6 @@
 #   - rh.atr and acomm are retained; bilateral CST and MCP are excluded
 #     from group-level WM-present classification.
 #
-# AUTHOR : BrainWorld pipeline
 # =============================================================================
 
 import os

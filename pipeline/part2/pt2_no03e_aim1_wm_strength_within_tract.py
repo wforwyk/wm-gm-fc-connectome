@@ -22,11 +22,11 @@
 #      Standard errors are cluster-robust by participant (CR1), t reference with (participants - 1) df.
 #      slope = change in the WM effect (Fisher-z) per 1 SD of the within-tract deviation of the metric
 #      (SD of x after removing the tract mean; the same SD is used for M1 and M2).
-#   4. Sets of tracts: pooled commissural + association (PRIMARY), commissural and association
+#   4. Sets of tracts: pooled commissural + association (main set for this optional analysis), commissural and association
 #      slopes from one interaction model and their difference, and all tracts (descriptive).
-#      Projection (<= 6 participants with cortico-cortical pairs) and other (fornix) enter only the
+#      Projection and other (fornix) enter only the
 #      all-tracts set.
-#   5. Descriptive checks: per-tract correlation across participants (n about 335 each), the number
+#   5. Descriptive checks: per-tract correlation across participants, the number
 #      of tracts whose correlation has the same sign (two-sided binomial test, tract is the unit), and
 #      leave-one-tract-out slopes (is one tract driving the pooled result?).
 #

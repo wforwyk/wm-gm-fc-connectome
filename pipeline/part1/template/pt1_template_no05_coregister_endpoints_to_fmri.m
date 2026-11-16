@@ -28,7 +28,7 @@
 %
 % NEXT STEP:
 %   Run pt1_template_no04_verification.sh with VERIFY_ENDPOINTS=true,
-%   then run part2/pt2_no04_endpoint_voxel_label.py.
+%   then run Part 2 no07 followed by pt2_no08_endpoint_voxel_covariates.py.
 % ============================================================
 
 %% ── USER SETTINGS ───────────────────────────────────────────
