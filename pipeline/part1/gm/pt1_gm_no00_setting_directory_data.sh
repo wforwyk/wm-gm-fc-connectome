@@ -102,7 +102,7 @@ for ID in "${SUBJECTS[@]}"; do
   fi
 
   if [[ $subj_failed -eq 1 ]]; then
-    failed_subjects+=("${SUBJ}")
+    failed_subjects+=("${ID}")
   fi
 
 done
