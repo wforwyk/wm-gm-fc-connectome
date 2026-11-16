@@ -28,8 +28,6 @@
 %           SUBJECTS uses numeric IDs only (no sub- prefix).
 %           interp = 0 (nearest neighbour) — matches SST_coregister_to_dwi.mat,
 %             preserves discrete AAL label integers.
-%           interp in step2 (crt_iwarped) = 1: different SPM function,
-%             continuous warp field requires trilinear.
 %           dwi.nii.gz is extracted to dwi.nii and kept after processing.
 %           Output prefixes are 'fmri_' and 'dwi_'.
 % ============================================================

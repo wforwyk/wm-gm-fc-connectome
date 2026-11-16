@@ -23,7 +23,7 @@
 % NOTE    : SPM must be on the MATLAB path.
 %           SUBJECTS uses numeric IDs only (no sub- prefix).
 %           Resampling parameters:
-%             interp = 1 (trilinear), K = 6
+%             interp = 0 (nearest neighbour), K = 6
 % ============================================================
 
 %% ── USER SETTINGS ───────────────────────────────────────────
@@ -73,7 +73,7 @@ for i = 1:numel(SUBJECTS)
     matlabbatch{1}.spm.tools.dartel.crt_iwarped.flowfields = {flowfile};
     matlabbatch{1}.spm.tools.dartel.crt_iwarped.images     = {SST_ATLAS};
     matlabbatch{1}.spm.tools.dartel.crt_iwarped.K          = 6;
-    matlabbatch{1}.spm.tools.dartel.crt_iwarped.interp     = 1;
+    matlabbatch{1}.spm.tools.dartel.crt_iwarped.interp     = 0;
 
     try
         spm_jobman('run', matlabbatch);
